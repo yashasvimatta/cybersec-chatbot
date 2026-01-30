@@ -1,6 +1,5 @@
 import fs from "node:fs/promises";
 import path from "node:path";
-
 function dot(a, b) {
   let s = 0;
   const n = Math.min(a.length, b.length);
@@ -24,6 +23,7 @@ export class VectorStore {
     this.fileMeta = {}; // fileId -> { fileName, mimeType, modifiedTime, hash, updatedAt }
   }
 
+  
   async load() {
     try {
       const raw = await fs.readFile(this.indexPath, "utf8");
