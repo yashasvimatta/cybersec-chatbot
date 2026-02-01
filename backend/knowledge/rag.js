@@ -1,7 +1,6 @@
 import path from "node:path";
 import { VectorStore } from "./vectorStore.js";
-import { parseDriveFolderId } from "./driveUtils.js";
-import { syncDriveFolderToVectorStore } from "./driveSync.js";
+import { syncDataToChroma } from "./driveSync.js";
 
 const DEFAULT_INDEX_PATH = path.join(process.cwd(), "data", "rag-index.json");
 
@@ -22,8 +21,7 @@ export async function initRag({ ai }) {
   _store = new VectorStore({ indexPath: DEFAULT_INDEX_PATH });
   await _store.load();
 
-  const folderRaw = process.env.DRIVE_FOLDER;
-  const folderId = parseDriveFolderId(folderRaw);
+  const folderId = process.env.CHROMA_FOLDER_ID;
   const intervalMinutes = envInt("DRIVE_SYNC_INTERVAL_MINUTES", 30);
 
   // Kick off periodic sync only if configured
@@ -32,18 +30,14 @@ export async function initRag({ ai }) {
       if (_syncing) return;
       _syncing = true;
       try {
-        const result = await syncDriveFolderToVectorStore({
-          ai,
-          folderId,
-          store: _store,
-        });
+        const result = await syncDataToChroma(folderId);
         _lastSync = new Date().toISOString();
         _lastSyncResult = result;
         console.log(
-          `📚 Drive KB sync: total=${result.total} changed=${result.changed} skipped=${result.skipped} failed=${result.failed}`
+          `📚 Chroma DB sync: total=${result.total} changed=${result.changed} skipped=${result.skipped} failed=${result.failed}`
         );
       } catch (e) {
-        console.error("📚 Drive KB sync error:", e);
+        console.error("📚 Chroma DB sync error:", e);
       } finally {
         _syncing = false;
       }
@@ -53,7 +47,7 @@ export async function initRag({ ai }) {
     run();
     _syncTimer = setInterval(run, Math.max(5, intervalMinutes) * 60 * 1000);
   } else {
-    console.log("📚 Drive KB sync disabled (set DRIVE_FOLDER to enable).");
+    console.log("📚 Chroma DB sync disabled (set CHROMA_FOLDER_ID to enable).");
   }
 
   return { store: _store, lastSync: _lastSync, lastSyncResult: _lastSyncResult };
@@ -61,7 +55,7 @@ export async function initRag({ ai }) {
 
 export function getRagStatus() {
   return {
-    enabled: Boolean(parseDriveFolderId(process.env.DRIVE_FOLDER)),
+    enabled: Boolean(process.env.CHROMA_FOLDER_ID),
     indexPath: _store?.indexPath || DEFAULT_INDEX_PATH,
     items: _store?.items?.length || 0,
     files: _store ? Object.keys(_store.fileMeta || {}).length : 0,

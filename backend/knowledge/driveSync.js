@@ -2,6 +2,7 @@ import crypto from "node:crypto";
 import fs from "node:fs/promises";
 import path from "node:path";
 import { google } from "googleapis";
+import { ChromaClient } from "chroma";
 
 import { chunkText } from "./chunkText.js";
 
@@ -75,6 +76,20 @@ async function downloadAsText(drive, file) {
   if (sample.includes("\u0000")) return null;
   return raw;
 }
+
+async function createChromaClient() {
+  const client = new ChromaClient();
+  await client.connect();
+  return client;
+}
+
+async function syncDataToChroma(folderId) {
+  const client = await createChromaClient();
+  // Logic to sync data from the specified folder to Chroma DB
+  // ...implementation...
+}
+
+export { syncDataToChroma };
 
 export async function syncDriveFolderToVectorStore({
   ai,

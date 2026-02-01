@@ -1,5 +1,8 @@
 import fs from "node:fs/promises";
 import path from "node:path";
+// Import Chroma DB client
+import { ChromaClient } from "chromadb";
+
 function dot(a, b) {
   let s = 0;
   const n = Math.min(a.length, b.length);
@@ -19,11 +22,11 @@ function normalize(vec) {
 export class VectorStore {
   constructor({ indexPath }) {
     this.indexPath = indexPath;
-    this.items = []; // { id, fileId, fileName, chunkIndex, text, embedding, updatedAt }
-    this.fileMeta = {}; // fileId -> { fileName, mimeType, modifiedTime, hash, updatedAt }
+    // Initialize Chroma DB connection
+    this.client = new ChromaClient();
+    this.client.connect();
   }
 
-  
   async load() {
     try {
       const raw = await fs.readFile(this.indexPath, "utf8");
@@ -92,5 +95,8 @@ export class VectorStore {
       .slice(0, topK);
     return scored;
   }
+
+  // Additional methods to interact with Chroma DB
+  // ...implementation...
 }
 
