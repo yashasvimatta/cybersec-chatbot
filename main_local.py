@@ -1,6 +1,7 @@
 """
 RAG Chatbot Backend - FastAPI Server (Local Folder Version)
 Works with local knowledge base folder instead of Google Drive
+Frontend-compatible: /chat, /reset, /health
 """
 
 from fastapi import FastAPI, HTTPException
@@ -8,6 +9,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from pydantic import BaseModel
 from typing import List, Optional
 import os
+import time
 from dotenv import load_dotenv
 
 from local_file_handler import LocalFileHandler
@@ -33,6 +35,10 @@ KB_FOLDER = os.getenv('KB_FOLDER', 'kb_raw')
 file_handler = LocalFileHandler(KB_FOLDER)
 rag_engine = RAGEngine()
 
+# In-memory session storage for conversation history (frontend compatibility)
+conversations: dict = {}
+SESSION_TIMEOUT = 2 * 60 * 60  # 2 hours
+
 
 class QueryRequest(BaseModel):
     query: str
@@ -41,6 +47,15 @@ class QueryRequest(BaseModel):
 
 class IndexRequest(BaseModel):
     folder_path: Optional[str] = None  # Optional subfolder path, None = index all
+
+
+class ChatRequest(BaseModel):
+    message: str
+    sessionId: str
+
+
+class ResetRequest(BaseModel):
+    sessionId: str
 
 
 class ChatResponse(BaseModel):
@@ -145,13 +160,16 @@ async def query_knowledge_base(request: QueryRequest):
 
 @app.get("/health")
 async def health_check():
-    """Check if all systems are operational"""
+    """Check if all systems are operational - frontend compatible"""
     try:
         folder_status = file_handler.check_connection()
         rag_status = rag_engine.check_status()
         
         return {
-            "status": "healthy" if (folder_status and rag_status) else "degraded",
+            "status": "ok" if (folder_status and rag_status) else "degraded",
+            "activeSessions": len(conversations),
+            "model": getattr(rag_engine, 'model', 'gemini'),
+            "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S.000Z", time.gmtime()),
             "knowledge_base_folder": KB_FOLDER,
             "folder_accessible": folder_status,
             "rag_engine": rag_status
@@ -161,6 +179,79 @@ async def health_check():
             "status": "unhealthy",
             "error": str(e)
         }
+
+
+def _cleanup_old_sessions():
+    """Remove sessions older than SESSION_TIMEOUT"""
+    now = time.time()
+    to_remove = [sid for sid, data in conversations.items() if now - data.get("lastActivity", 0) > SESSION_TIMEOUT]
+    for sid in to_remove:
+        del conversations[sid]
+
+
+@app.post("/chat")
+async def chat(request: ChatRequest):
+    """
+    Chat endpoint - frontend compatible.
+    Accepts { message, sessionId }, returns { reply }.
+    Uses RAG with kb_raw + Gemini.
+    """
+    try:
+        if not request.message or not request.message.strip():
+            raise HTTPException(status_code=400, detail="Message cannot be empty")
+        
+        _cleanup_old_sessions()
+        
+        # Get or create session
+        if request.sessionId not in conversations:
+            conversations[request.sessionId] = {"history": [], "lastActivity": time.time()}
+        
+        session = conversations[request.sessionId]
+        session["lastActivity"] = time.time()
+        
+        # Build history for context (last 10 exchanges)
+        history = session["history"][-20:]  # Last 20 messages (10 exchanges)
+        
+        # Get relevant docs from kb_raw (empty if not indexed yet)
+        try:
+            relevant_docs = rag_engine.retrieve_relevant_docs(request.message)
+        except Exception:
+            relevant_docs = []
+        
+        # Generate answer with optional conversation history
+        answer, sources, confidence = rag_engine.generate_answer(
+            request.message,
+            relevant_docs if relevant_docs else [],
+            history=history
+        )
+        
+        # Update session history
+        session["history"].append({"role": "user", "content": request.message})
+        session["history"].append({"role": "assistant", "content": answer})
+        if len(session["history"]) > 20:
+            session["history"] = session["history"][-20:]
+        
+        return {
+            "reply": answer,
+            "conversationLength": len(session["history"]) // 2,
+            "sources": sources if relevant_docs else [],
+        }
+    
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+
+@app.post("/reset")
+async def reset_chat(request: ResetRequest):
+    """Reset conversation - frontend compatible"""
+    try:
+        if request.sessionId in conversations:
+            del conversations[request.sessionId]
+        return {"success": True, "message": "Conversation reset"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 
 @app.get("/stats")

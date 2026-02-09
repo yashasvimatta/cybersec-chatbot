@@ -67,6 +67,20 @@ export default function ChatWindow({ messages = [], isTyping = false, onSendSugg
             >
               Cloud Security
             </button>
+            <button
+              className="suggestion-chip"
+              onClick={() => onSendSuggestion?.("What are our KPIs for 2026?")}
+              type="button"
+            >
+              Our KPIs
+            </button>
+            <button
+              className="suggestion-chip"
+              onClick={() => onSendSuggestion?.("Summarize our incident response policy")}
+              type="button"
+            >
+              Incident Policy
+            </button>
           </div>
         </div>
       )}
@@ -74,6 +88,11 @@ export default function ChatWindow({ messages = [], isTyping = false, onSendSugg
       {messages.map((msg) => (
         <div key={msg.id} className={`message ${msg.type}`}>
           <div>{renderBoldMarkdown(msg.text)}</div>
+          {msg.sources && msg.sources.length > 0 && (
+            <div className="sources">
+              📁 From kb_raw: {msg.sources.map((s) => s.name || s.path).join(", ")}
+            </div>
+          )}
           {msg.timestamp && <div className="timestamp">{msg.timestamp}</div>}
         </div>
       ))}

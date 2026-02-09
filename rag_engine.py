@@ -268,13 +268,19 @@ class RAGEngine:
         print("=" * 60 + "\n")
         return total_chunks
     
-    def retrieve_relevant_docs(self, query: str, folder_id: str = None, top_k: int = 5, similarity_threshold: float = 0.3) -> List[Dict]:
+    def retrieve_relevant_docs(self, query: str, folder_id: str = None, top_k: int = 10, similarity_threshold: float = 0.2) -> List[Dict]:
         """
         Retrieve most relevant document chunks for a query
         Only returns documents with similarity above the threshold
         (For cosine distance: 0.0-1.0 scale, where 0 = identical, 1 = completely different)
         similarity_threshold default: 0.5 (cosine distance < 0.5, or similarity > 0.5)
         """
+        try:
+            if self.collection.count() == 0:
+                return []
+        except Exception:
+            return []
+        
         # Generate query embedding
         query_embedding = self._get_embedding(query)
         
@@ -304,25 +310,26 @@ class RAGEngine:
         
         return relevant_docs
     
-    def generate_answer(self, query: str, relevant_docs: List[Dict]) -> Tuple[str, List[dict], float]:
+    def generate_answer(self, query: str, relevant_docs: List[Dict], history: List[Dict] = None) -> Tuple[str, List[dict], float]:
         """
         Generate answer using LLM with retrieved context
         If relevant docs exist, answer based on them
         If no relevant docs, allow LLM to use its general knowledge
+        history: optional list of {role, content} for conversation context
         Returns: (answer, sources, confidence_score)
         """
+        history = history or []
+        
         # Build context from relevant documents if available
         context = self._build_context(relevant_docs) if relevant_docs else None
         
         # Create appropriate prompt based on whether we have context
         if context and relevant_docs:
             # We have relevant documents - use RAG mode
-            prompt = self._create_prompt_with_context(query, context)
-            answer_source = "documents"
+            prompt = self._create_prompt_with_context(query, context, history)
         else:
             # No relevant documents - use general knowledge mode
-            prompt = self._create_prompt_general_knowledge(query)
-            answer_source = "general"
+            prompt = self._create_prompt_general_knowledge(query, history)
         
         # Generate answer based on provider
         if self.provider == 'gemini':
@@ -414,30 +421,41 @@ class RAGEngine:
         """Create prompt for LLM - DEPRECATED, use the specific ones below"""
         return self._create_prompt_with_context(query, context)
     
-    def _create_prompt_with_context(self, query: str, context: str) -> str:
+    def _create_prompt_with_context(self, query: str, context: str, history: List[Dict] = None) -> str:
         """Create prompt for answering based on documents (RAG mode)"""
-        return f"""You are a helpful AI assistant with access to an organization's knowledge base. 
+        history = history or []
+        history_block = ""
+        if history:
+            history_block = "\n\nRecent conversation:\n" + "\n".join(
+                f"{'User' if h['role']=='user' else 'Assistant'}: {h['content'][:500]}"
+                for h in history[-6:]  # Last 3 exchanges
+            ) + "\n\n"
+        
+        return f"""You are an internal assistant for C&S Wholesale Groceries. You have DIRECT ACCESS to the organization's knowledge base (kb_raw). The context below was retrieved from company documents.
 
-**IMPORTANT:** Answer the user's question ONLY based on the provided context from the knowledge base.
-
-If the context doesn't contain enough information to answer the question, clearly state what information you cannot find in the documents.
-
-Always cite which source(s) you're using in your answer.
-
-Context from knowledge base:
+**CRITICAL:** Use the provided context to answer. Do NOT say you don't have access, lack permission, or cannot access this data—you DO have it. Answer directly from the context. If the context doesn't contain the exact information, say what you found and what's missing. Always cite the source document(s).
+{history_block}
+Context from knowledge base (kb_raw):
 {context}
 
 User Question: {query}
 
 Answer:"""
     
-    def _create_prompt_general_knowledge(self, query: str) -> str:
+    def _create_prompt_general_knowledge(self, query: str, history: List[Dict] = None) -> str:
         """Create prompt for answering general knowledge questions (when no documents are relevant)"""
-        return f"""You are a helpful AI assistant.
+        history = history or []
+        history_block = ""
+        if history:
+            history_block = "\n\nRecent conversation:\n" + "\n".join(
+                f"{'User' if h['role']=='user' else 'Assistant'}: {h['content'][:500]}"
+                for h in history[-6:]
+            ) + "\n\n"
+        
+        return f"""You are an internal assistant for C&S Wholesale Groceries.
 
-The user is asking a question that doesn't match any documents in our knowledge base.
-You can use your general knowledge to answer this question.
-
+No relevant documents were found in the knowledge base (kb_raw) for this query. This may mean: (1) documents need to be indexed—run: python index_local.py, or (2) the information isn't in kb_raw yet. Do NOT claim you lack access due to security/privacy—the issue is retrieval. Suggest indexing or checking if the document exists in kb_raw.
+{history_block}
 User Question: {query}
 
 Answer:"""

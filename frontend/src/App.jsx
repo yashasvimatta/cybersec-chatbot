@@ -15,9 +15,8 @@ export default function App() {
     []
   );
 
-  // Keep the existing behavior (direct backend URL) for now.
-  // Note: vite.config proxy currently maps /api -> backend.
-  const API_BASE = "http://localhost:3001";
+  // Python backend (FastAPI + RAG with kb_raw + Gemini)
+  const API_BASE = "http://localhost:8000";
 
   const checkHealth = async () => {
     try {
@@ -65,6 +64,7 @@ export default function App() {
           type: "bot",
           text: response.data.reply || "No reply",
           timestamp: new Date().toLocaleTimeString(),
+          sources: response.data.sources || [],
         },
       ]);
 
@@ -85,6 +85,19 @@ export default function App() {
     }
   };
 
+  const indexKnowledgeBase = async () => {
+    setStatus("Indexing...");
+    try {
+      const res = await axios.post(`${API_BASE}/index`, {});
+      setStatus(`Indexed ${res.data.chunk_count} chunks from ${res.data.document_count} docs`);
+      setTimeout(() => setStatus("Connected"), 4000);
+    } catch (error) {
+      setStatus("Index failed");
+      console.error(error);
+      setTimeout(() => setStatus("Connected"), 3000);
+    }
+  };
+
   const resetChat = async () => {
     // Keep simple confirm
     if (!confirm("Are you sure you want to reset the conversation?")) return;
@@ -102,7 +115,7 @@ export default function App() {
 
   return (
     <div className="app-container">
-      <Header status={status} onReset={resetChat} />
+      <Header status={status} onReset={resetChat} onIndexKB={indexKnowledgeBase} />
 
       <div className="container">
         <ChatWindow
@@ -119,8 +132,7 @@ export default function App() {
         />
 
         <div className="hint">
-          Tip: I maintain conversation context, so you can ask follow-up questions
-          naturally
+          Searches your kb_raw folder + Gemini. Index docs first if needed.
         </div>
       </div>
     </div>

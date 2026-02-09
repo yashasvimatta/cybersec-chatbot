@@ -1,13 +1,13 @@
 import React from "react";
 
-export default function Header({ status = "Connected", onReset }) {
+export default function Header({ status = "Connected", onReset, onIndexKB }) {
   return (
     <header className="app-header">
       <div className="header-left">
         <img className="brand-logo" src="/company-logo.png" alt="Company logo" />
         <div className="brand-text">
           <div className="title">Fiona</div>
-          <div className="subtitle">Cybersecurity Assistant</div>
+          <div className="subtitle">Cybersecurity Assistant · kb_raw + Gemini</div>
         </div>
       </div>
 
@@ -16,6 +16,11 @@ export default function Header({ status = "Connected", onReset }) {
           <span className="status-dot" />
           <span>{status}</span>
         </div>
+        {onIndexKB && (
+          <button className="btn btn-secondary" onClick={onIndexKB} title="Index kb_raw documents">
+            Index KB
+          </button>
+        )}
         <button className="btn btn-danger" onClick={onReset}>
           Reset Chat
         </button>
