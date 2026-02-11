@@ -490,6 +490,141 @@ class RAGEngine:
         
         return relevant_docs
     
+    def analyze_image(self, image_bytes: bytes, mime_type: str, query: str,
+                      history: List[Dict] = None, persona: Dict = None,
+                      kb_context: str = "") -> str:
+        """
+        Analyze an image using Gemini multimodal (vision).
+        Also includes relevant kb_raw context and Core FAQ for C&S-specific answers.
+        """
+        import time as _time
+
+        persona_block = ""
+        if persona:
+            persona_block = f"\nThe user works in {persona.get('department', '')} as a {persona.get('role', '')}. Tailor your analysis accordingly.\n"
+
+        history_block = ""
+        if history:
+            recent = history[-10:]
+            history_block = "\n--- Recent conversation ---\n"
+            for h in recent:
+                role_label = "User" if h["role"] == "user" else "Fiona"
+                history_block += f"{role_label}: {h['content'][:200]}\n"
+
+        kb_block = ""
+        if kb_context:
+            kb_block = f"\n--- RELEVANT C&S DOCUMENTS (from knowledge base) ---\n{kb_context}\n--- END KB CONTEXT ---\n"
+
+        system_prompt = f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
+A user has shared an image and asked a question about it. Analyze the image carefully and provide a detailed, helpful answer.
+
+RULES:
+- Answer every question. Do not refuse.
+- If it's a screenshot of an error, security alert, phishing email, or suspicious message — analyze it thoroughly and provide clear guidance based on C&S policies.
+- If it's a document screenshot, extract and summarize the visible information.
+- Cross-reference with C&S company policies and knowledge base when relevant.
+- Format well: use **bold** for key terms, bullet lists for steps, headings for sections.
+{persona_block}{history_block}
+--- CORE CYBERSECURITY FAQ (always available) ---
+{CORE_FAQ}
+{kb_block}
+User's question: {query}
+
+Analyze the image and answer:"""
+
+        if self.provider == 'gemini':
+            import PIL.Image
+            import io
+
+            last_error = None
+            for attempt in range(3):
+                try:
+                    img = PIL.Image.open(io.BytesIO(image_bytes))
+                    response = self.llm_client.generate_content(
+                        [system_prompt, img],
+                        safety_settings={
+                            'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
+                            'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
+                            'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
+                            'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE',
+                        }
+                    )
+                    if not response.parts:
+                        return "I can see the image but couldn't generate a detailed analysis. Could you describe what you're seeing or ask a more specific question?"
+                    return self._clean_refusals(response.text, query)
+                except Exception as e:
+                    last_error = e
+                    error_msg = str(e).lower()
+                    if "429" in str(e) or "rate" in error_msg or "quota" in error_msg:
+                        _time.sleep(2 ** attempt)
+                        continue
+                    elif attempt < 2:
+                        _time.sleep(1.5)
+                        continue
+                    break
+
+            return f"I had trouble analyzing the image: {str(last_error)[:100]}. Please try again in a moment."
+        else:
+            return "Image analysis requires the Gemini provider. Please configure Gemini as your LLM provider."
+
+    def answer_with_document_context(self, query: str, document_text: str,
+                                      document_name: str, history: List[Dict] = None,
+                                      persona: Dict = None,
+                                      kb_context: str = "") -> str:
+        """
+        Answer a question using an uploaded document as the primary context.
+        Also includes relevant kb_raw context and Core FAQ for C&S-specific answers.
+        """
+        # Truncate very large documents
+        max_chars = 30000
+        if len(document_text) > max_chars:
+            document_text = document_text[:max_chars] + f"\n\n... [Document truncated — showing first {max_chars} characters of {len(document_text)} total]"
+
+        persona_block = ""
+        if persona:
+            persona_block = f"\nThe user works in {persona.get('department', '')} as a {persona.get('role', '')}. Tailor your answer accordingly.\n"
+
+        history_block = ""
+        if history:
+            recent = history[-10:]
+            history_block = "\n--- Recent conversation ---\n"
+            for h in recent:
+                role_label = "User" if h["role"] == "user" else "Fiona"
+                history_block += f"{role_label}: {h['content'][:200]}\n"
+
+        kb_block = ""
+        if kb_context:
+            kb_block = f"\n--- RELATED C&S DOCUMENTS (from knowledge base) ---\n{kb_context}\n--- END KB CONTEXT ---\n"
+
+        prompt = f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
+The user has uploaded a document and is asking about it. Use the uploaded document as your PRIMARY source, but also reference C&S policies and knowledge base when relevant.
+
+RULES:
+- Answer every question. Do not refuse.
+- Summarize, extract, and analyze the uploaded document content as requested.
+- When relevant, cross-reference with C&S company policies from the knowledge base below.
+- Format well: use **bold** for key terms, bullet lists for steps, headings for sections.
+{persona_block}{history_block}
+--- CORE CYBERSECURITY FAQ (always available) ---
+{CORE_FAQ}
+{kb_block}
+--- UPLOADED DOCUMENT: {document_name} ---
+{document_text}
+--- END DOCUMENT ---
+
+User's question: {query}
+
+Answer:"""
+
+        if self.provider == 'gemini':
+            answer = self._generate_with_gemini(prompt)
+        elif self.provider == 'anthropic':
+            answer = self._generate_with_anthropic(prompt)
+        else:
+            answer = self._generate_with_openai(prompt)
+
+        return self._clean_refusals(answer, query)
+
     def generate_answer(self, query: str, relevant_docs: List[Dict], history: List[Dict] = None, persona: Dict = None) -> Tuple[str, List[dict], float]:
         """
         Generate answer using LLM with retrieved context

@@ -2,20 +2,17 @@ import React, { useState, useRef, useEffect } from "react";
 
 function FionaHeaderAvatar() {
   return (
-    <svg width="36" height="36" viewBox="0 0 40 40" fill="none" className="header-fiona-avatar">
-      <circle cx="20" cy="20" r="20" fill="var(--fiona-accent, #a6e22e)" />
-      <circle cx="20" cy="16" r="8" fill="var(--fiona-face, #272822)" />
-      <ellipse cx="20" cy="34" rx="12" ry="9" fill="var(--fiona-face, #272822)" />
-      <circle cx="17" cy="15" r="1.5" fill="var(--fiona-accent, #a6e22e)" />
-      <circle cx="23" cy="15" r="1.5" fill="var(--fiona-accent, #a6e22e)" />
-      <path d="M17 19 Q20 22 23 19" stroke="var(--fiona-accent, #a6e22e)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-    </svg>
+    <div className="avatar avatar-fiona header-fiona-avatar" style={{ width: 34, height: 34, fontSize: 14, lineHeight: "34px" }}>
+      F
+    </div>
   );
 }
 
-function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics }) {
+function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics, onUploadToKB }) {
   const [open, setOpen] = useState(false);
+  const [uploadStatus, setUploadStatus] = useState(null); // null | "uploading" | "success" | "error"
   const ref = useRef(null);
+  const kbFileRef = useRef(null);
 
   // Close on outside click
   useEffect(() => {
@@ -27,6 +24,22 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
   }, [open]);
 
   const isAdmin = persona?.department === "IS" || persona?.department === "ELT";
+
+  const handleKBUpload = async (e) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+    setUploadStatus("uploading");
+    try {
+      await onUploadToKB(file);
+      setUploadStatus("success");
+      setTimeout(() => { setUploadStatus(null); setOpen(false); }, 2000);
+    } catch (err) {
+      setUploadStatus("error");
+      alert("Upload failed: " + (err.message || "Unknown error"));
+      setTimeout(() => setUploadStatus(null), 2000);
+    }
+    if (kbFileRef.current) kbFileRef.current.value = "";
+  };
 
   return (
     <div className="tools-menu-wrap" ref={ref}>
@@ -40,10 +53,9 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             className="tools-item"
             onClick={() => { onReportIncident(); setOpen(false); }}
           >
-            <span className="tools-item-icon">&#128680;</span>
             <div className="tools-item-text">
               <strong>Report Incident</strong>
-              <span>Phishing, suspicious activity, data leak — email the Cybersecurity Team</span>
+              <span>Phishing, suspicious activity, data leak</span>
             </div>
           </button>
 
@@ -51,10 +63,34 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             className="tools-item"
             onClick={() => { onOpenChecklists(); setOpen(false); }}
           >
-            <span className="tools-item-icon">&#9745;</span>
             <div className="tools-item-text">
-              <strong>My Security Tasks</strong>
-              <span>Interactive checklists — new employee setup, access reviews, remote work security</span>
+              <strong>Security Tasks</strong>
+              <span>Checklists for setup, access reviews, remote work</span>
+            </div>
+          </button>
+
+          {/* Upload to Knowledge Base */}
+          <input
+            type="file"
+            ref={kbFileRef}
+            style={{ display: "none" }}
+            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.md,.json"
+            onChange={handleKBUpload}
+          />
+          <button
+            className="tools-item"
+            onClick={() => kbFileRef.current?.click()}
+            disabled={uploadStatus === "uploading"}
+          >
+            <div className="tools-item-text">
+              <strong>
+                {uploadStatus === "uploading"
+                  ? "Uploading..."
+                  : uploadStatus === "success"
+                  ? "Uploaded!"
+                  : "Upload to Knowledge Base"}
+              </strong>
+              <span>Add a document — PDF, Word, Excel, PowerPoint</span>
             </div>
           </button>
 
@@ -63,10 +99,9 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
               className="tools-item"
               onClick={() => { onOpenAnalytics(); setOpen(false); }}
             >
-              <span className="tools-item-icon">&#128202;</span>
               <div className="tools-item-text">
-                <strong>Analytics Dashboard</strong>
-                <span>Query volume, satisfaction scores, knowledge gaps, department usage</span>
+                <strong>Analytics</strong>
+                <span>Query volume, satisfaction, knowledge gaps</span>
               </div>
             </button>
           )}
@@ -78,10 +113,9 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             rel="noopener noreferrer"
             onClick={() => setOpen(false)}
           >
-            <span className="tools-item-icon">&#127760;</span>
             <div className="tools-item-text">
               <strong>Cybersecurity Website</strong>
-              <span>Policies, training materials, and self-service resources</span>
+              <span>Policies, training, and resources</span>
             </div>
           </a>
 
@@ -90,10 +124,9 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             href="mailto:CyberSecurity@cswg.com"
             onClick={() => setOpen(false)}
           >
-            <span className="tools-item-icon">&#9993;</span>
             <div className="tools-item-text">
-              <strong>Email Cybersecurity Team</strong>
-              <span>CyberSecurity@cswg.com &middot; Helpdesk: 603-354-7500</span>
+              <strong>Contact Cybersecurity Team</strong>
+              <span>CyberSecurity@cswg.com &middot; 603-354-7500</span>
             </div>
           </a>
         </div>
@@ -112,6 +145,7 @@ export default function Header({
   onReportIncident,
   onOpenChecklists,
   onOpenAnalytics,
+  onUploadToKB,
 }) {
   return (
     <header className="app-header">
@@ -138,7 +172,7 @@ export default function Header({
           onClick={onToggleTheme}
           title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
         >
-          <span className="theme-icon">{theme === "dark" ? "\u2600\uFE0F" : "\uD83C\uDF19"}</span>
+          <span className="theme-icon">{theme === "dark" ? "Light" : "Dark"}</span>
         </button>
 
         <ToolsMenu
@@ -146,6 +180,7 @@ export default function Header({
           onReportIncident={onReportIncident}
           onOpenChecklists={onOpenChecklists}
           onOpenAnalytics={onOpenAnalytics}
+          onUploadToKB={onUploadToKB}
         />
 
         {onSwitchPersona && (

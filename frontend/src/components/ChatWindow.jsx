@@ -194,15 +194,12 @@ function renderInline(text) {
 
 function FionaAvatar({ size = 32 }) {
   return (
-    <svg width={size} height={size} viewBox="0 0 40 40" fill="none" className="avatar avatar-fiona">
-      <circle cx="20" cy="20" r="20" fill="var(--fiona-accent, #a6e22e)" />
-      <circle cx="20" cy="16" r="8" fill="var(--fiona-face, #272822)" />
-      <ellipse cx="20" cy="34" rx="12" ry="9" fill="var(--fiona-face, #272822)" />
-      <circle cx="17" cy="15" r="1.5" fill="var(--fiona-accent, #a6e22e)" />
-      <circle cx="23" cy="15" r="1.5" fill="var(--fiona-accent, #a6e22e)" />
-      <path d="M17 19 Q20 22 23 19" stroke="var(--fiona-accent, #a6e22e)" strokeWidth="1.2" fill="none" strokeLinecap="round" />
-      <circle cx="20" cy="20" r="19.5" stroke="var(--fiona-accent, #a6e22e)" strokeWidth="1" fill="none" opacity="0.3" />
-    </svg>
+    <div
+      className="avatar avatar-fiona"
+      style={{ width: size, height: size, fontSize: size * 0.4, lineHeight: `${size}px` }}
+    >
+      F
+    </div>
   );
 }
 
@@ -314,6 +311,20 @@ function TipCard({ tip, onDismiss }) {
   );
 }
 
+/* ── File icon helper ──────────────────────────────────── */
+
+function getFileIcon(filename) {
+  const ext = filename?.split(".").pop().toLowerCase();
+  const icons = {
+    pdf: "\uD83D\uDCC4", docx: "\uD83D\uDCC3", doc: "\uD83D\uDCC3",
+    xlsx: "\uD83D\uDCCA", xls: "\uD83D\uDCCA", pptx: "\uD83D\uDCCA", ppt: "\uD83D\uDCCA",
+    txt: "\uD83D\uDCC4", csv: "\uD83D\uDCCA", md: "\uD83D\uDCC4",
+    png: "\uD83D\uDDBC\uFE0F", jpg: "\uD83D\uDDBC\uFE0F", jpeg: "\uD83D\uDDBC\uFE0F",
+    gif: "\uD83D\uDDBC\uFE0F", webp: "\uD83D\uDDBC\uFE0F",
+  };
+  return icons[ext] || "\uD83D\uDCC1";
+}
+
 /* ── Main Component ────────────────────────────────────── */
 
 export default function ChatWindow({
@@ -422,6 +433,28 @@ export default function ChatWindow({
             ) : null}
           </div>
           <div className={`message ${msg.type}`}>
+            {/* Attachment preview in user messages */}
+            {msg.attachment && (
+              <div className="msg-attachment">
+                {msg.attachment.isImage && msg.attachment.previewUrl ? (
+                  <img
+                    src={msg.attachment.previewUrl}
+                    alt={msg.attachment.name}
+                    className="msg-attachment-image"
+                  />
+                ) : (
+                  <div className="msg-attachment-file">
+                    <span className="msg-attachment-icon">
+                      {getFileIcon(msg.attachment.name)}
+                    </span>
+                    <span className="msg-attachment-name">{msg.attachment.name}</span>
+                    <span className="msg-attachment-size">
+                      {(msg.attachment.size / 1024).toFixed(1)} KB
+                    </span>
+                  </div>
+                )}
+              </div>
+            )}
             <div className="md-content">{renderMarkdown(msg.text)}</div>
             {msg.type === "bot" && <ConfidenceBadge confidence={msg.confidence} />}
             {msg.timestamp && <div className="timestamp">{msg.timestamp}</div>}

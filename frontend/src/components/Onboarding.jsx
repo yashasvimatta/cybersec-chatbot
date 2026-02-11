@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 const DEPARTMENTS = {
   "Finance": {
-    icon: "💰",
+    icon: "FIN",
     roles: [
       "CFO / VP Finance",
       "Controller",
@@ -21,7 +21,7 @@ const DEPARTMENTS = {
     ],
   },
   "Supply Chain": {
-    icon: "🚛",
+    icon: "SCM",
     roles: [
       "VP Supply Chain",
       "Logistics Manager",
@@ -40,7 +40,7 @@ const DEPARTMENTS = {
     ],
   },
   "IS": {
-    icon: "🔒",
+    icon: "IS",
     roles: [
       "CISO",
       "Security Analyst",
@@ -59,7 +59,7 @@ const DEPARTMENTS = {
     ],
   },
   "Retail": {
-    icon: "🏪",
+    icon: "RTL",
     roles: [
       "Store Manager",
       "Regional Manager",
@@ -78,7 +78,7 @@ const DEPARTMENTS = {
     ],
   },
   "Commercial": {
-    icon: "📊",
+    icon: "COM",
     roles: [
       "VP Commercial",
       "Sales Director",
@@ -97,7 +97,7 @@ const DEPARTMENTS = {
     ],
   },
   "Procurement": {
-    icon: "📦",
+    icon: "PRO",
     roles: [
       "Chief Procurement Officer",
       "Procurement Manager",
@@ -116,7 +116,7 @@ const DEPARTMENTS = {
     ],
   },
   "Legal": {
-    icon: "⚖️",
+    icon: "LGL",
     roles: [
       "General Counsel",
       "Corporate Attorney",
@@ -135,7 +135,7 @@ const DEPARTMENTS = {
     ],
   },
   "HR": {
-    icon: "👥",
+    icon: "HR",
     roles: [
       "CHRO / VP HR",
       "HR Business Partner",
@@ -154,7 +154,7 @@ const DEPARTMENTS = {
     ],
   },
   "ELT": {
-    icon: "👔",
+    icon: "ELT",
     roles: [
       "CEO",
       "COO",
@@ -203,14 +203,14 @@ export default function Onboarding({ onComplete, theme, onToggleTheme }) {
         onClick={onToggleTheme}
         title={theme === "dark" ? "Switch to Light Mode" : "Switch to Dark Mode"}
       >
-        <span className="theme-icon">{theme === "dark" ? "\u2600\uFE0F" : "\uD83C\uDF19"}</span>
+        <span className="theme-icon">{theme === "dark" ? "Light" : "Dark"}</span>
       </button>
       <div className="onboarding-card">
         <div className="onboarding-header">
           <img className="onboarding-logo" src="/company-logo.png" alt="C&S Logo" />
-          <h1>Welcome to Fiona</h1>
+          <h1>Fiona</h1>
           <p className="onboarding-sub">
-            Your cybersecurity assistant — let's personalize your experience.
+            C&S Cybersecurity Assistant — let's personalize your experience.
           </p>
         </div>
 
@@ -246,7 +246,7 @@ export default function Onboarding({ onComplete, theme, onToggleTheme }) {
         {step === 2 && deptData && (
           <div className="onboarding-step">
             <h2>
-              {deptData.icon} {department} — What's your role?
+              {department} — Select your role
             </h2>
             <div className="role-grid">
               {deptData.roles.map((r) => (
@@ -269,7 +269,7 @@ export default function Onboarding({ onComplete, theme, onToggleTheme }) {
         {step === 3 && deptData && (
           <div className="onboarding-step">
             <h2>
-              {deptData.icon} Here's how Fiona helps {department}
+              How Fiona helps {department}
             </h2>
             <p className="persona-desc">{deptData.description}</p>
 
@@ -285,7 +285,7 @@ export default function Onboarding({ onComplete, theme, onToggleTheme }) {
             </ul>
 
             <button className="start-btn" onClick={handleStart}>
-              Start Chatting →
+              Get Started
             </button>
             <button className="back-link" onClick={() => setStep(2)}>
               ← Change role
