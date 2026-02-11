@@ -137,90 +137,6 @@ export default function App() {
     }
   };
 
-  // ── Send message with attachment ────────────────────────
-
-  const sendAttachment = async (file, messageText) => {
-    if (!file || isTyping) return;
-
-    const isImage = /\.(png|jpe?g|gif|webp|bmp)$/i.test(file.name);
-    const previewUrl = isImage ? URL.createObjectURL(file) : null;
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now(),
-        type: "user",
-        text: messageText?.trim() || `Analyze this file: ${file.name}`,
-        timestamp: new Date().toLocaleTimeString(),
-        attachment: {
-          name: file.name,
-          size: file.size,
-          isImage,
-          previewUrl,
-        },
-      },
-    ]);
-
-    setInputMessage("");
-    setIsTyping(true);
-    setStatus("Analyzing file...");
-
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      formData.append("message", messageText?.trim() || "");
-      formData.append("sessionId", sessionId);
-      formData.append("department", persona?.department || "");
-      formData.append("role", persona?.role || "");
-
-      const response = await axios.post(`${API_BASE}/chat/attachment`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-        timeout: 120000, // 2 min timeout for large files
-      });
-
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          type: "bot",
-          text: response.data.reply || "No reply",
-          timestamp: new Date().toLocaleTimeString(),
-          sources: response.data.sources || [],
-          confidence: response.data.confidence,
-          followUps: response.data.followUps || [],
-        },
-      ]);
-
-      setStatus("Connected");
-    } catch (error) {
-      setMessages((prev) => [
-        ...prev,
-        {
-          id: Date.now() + 1,
-          type: "error",
-          text: `Error: ${error.response?.data?.detail || error.response?.data?.error || error.message}`,
-        },
-      ]);
-      setStatus("Connection failed");
-    } finally {
-      setIsTyping(false);
-    }
-  };
-
-  // ── Upload to KB ─────────────────────────────────────
-
-  const uploadToKB = async (file) => {
-    try {
-      const formData = new FormData();
-      formData.append("file", file);
-      const res = await axios.post(`${API_BASE}/upload`, formData, {
-        headers: { "Content-Type": "multipart/form-data" },
-      });
-      return res.data;
-    } catch (error) {
-      throw new Error(error.response?.data?.detail || error.message);
-    }
-  };
 
   // ── Reset ─────────────────────────────────────────────
 
@@ -344,7 +260,6 @@ export default function App() {
         onReportIncident={() => setShowIncidentReport(true)}
         onOpenChecklists={() => setShowChecklists(true)}
         onOpenAnalytics={() => setShowAnalytics(true)}
-        onUploadToKB={uploadToKB}
       />
 
       <div className="container">
@@ -365,7 +280,6 @@ export default function App() {
           disabled={isTyping}
           onChange={setInputMessage}
           onSend={() => sendMessage()}
-          onAttach={sendAttachment}
         />
 
         <div className="hint">

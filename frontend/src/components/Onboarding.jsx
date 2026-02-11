@@ -2,7 +2,7 @@ import React, { useState } from "react";
 
 const DEPARTMENTS = {
   "Finance": {
-    icon: "FIN",
+    icon: "\uD83D\uDCB0",
     roles: [
       "CFO / VP Finance",
       "Controller",
@@ -21,7 +21,7 @@ const DEPARTMENTS = {
     ],
   },
   "Supply Chain": {
-    icon: "SCM",
+    icon: "\uD83D\uDE9A",
     roles: [
       "VP Supply Chain",
       "Logistics Manager",
@@ -40,7 +40,7 @@ const DEPARTMENTS = {
     ],
   },
   "IS": {
-    icon: "IS",
+    icon: "\uD83D\uDEE1\uFE0F",
     roles: [
       "CISO",
       "Security Analyst",
@@ -59,7 +59,7 @@ const DEPARTMENTS = {
     ],
   },
   "Retail": {
-    icon: "RTL",
+    icon: "\uD83D\uDED2",
     roles: [
       "Store Manager",
       "Regional Manager",
@@ -78,7 +78,7 @@ const DEPARTMENTS = {
     ],
   },
   "Commercial": {
-    icon: "COM",
+    icon: "\uD83D\uDCBC",
     roles: [
       "VP Commercial",
       "Sales Director",
@@ -97,7 +97,7 @@ const DEPARTMENTS = {
     ],
   },
   "Procurement": {
-    icon: "PRO",
+    icon: "\uD83D\uDCE6",
     roles: [
       "Chief Procurement Officer",
       "Procurement Manager",
@@ -116,7 +116,7 @@ const DEPARTMENTS = {
     ],
   },
   "Legal": {
-    icon: "LGL",
+    icon: "\u2696\uFE0F",
     roles: [
       "General Counsel",
       "Corporate Attorney",
@@ -135,7 +135,7 @@ const DEPARTMENTS = {
     ],
   },
   "HR": {
-    icon: "HR",
+    icon: "\uD83D\uDC65",
     roles: [
       "CHRO / VP HR",
       "HR Business Partner",
@@ -154,7 +154,7 @@ const DEPARTMENTS = {
     ],
   },
   "ELT": {
-    icon: "ELT",
+    icon: "\uD83C\uDFAF",
     roles: [
       "CEO",
       "COO",

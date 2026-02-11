@@ -8,11 +8,9 @@ function FionaHeaderAvatar() {
   );
 }
 
-function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics, onUploadToKB }) {
+function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics }) {
   const [open, setOpen] = useState(false);
-  const [uploadStatus, setUploadStatus] = useState(null); // null | "uploading" | "success" | "error"
   const ref = useRef(null);
-  const kbFileRef = useRef(null);
 
   // Close on outside click
   useEffect(() => {
@@ -24,22 +22,6 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
   }, [open]);
 
   const isAdmin = persona?.department === "IS" || persona?.department === "ELT";
-
-  const handleKBUpload = async (e) => {
-    const file = e.target.files?.[0];
-    if (!file) return;
-    setUploadStatus("uploading");
-    try {
-      await onUploadToKB(file);
-      setUploadStatus("success");
-      setTimeout(() => { setUploadStatus(null); setOpen(false); }, 2000);
-    } catch (err) {
-      setUploadStatus("error");
-      alert("Upload failed: " + (err.message || "Unknown error"));
-      setTimeout(() => setUploadStatus(null), 2000);
-    }
-    if (kbFileRef.current) kbFileRef.current.value = "";
-  };
 
   return (
     <div className="tools-menu-wrap" ref={ref}>
@@ -66,31 +48,6 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             <div className="tools-item-text">
               <strong>Security Tasks</strong>
               <span>Checklists for setup, access reviews, remote work</span>
-            </div>
-          </button>
-
-          {/* Upload to Knowledge Base */}
-          <input
-            type="file"
-            ref={kbFileRef}
-            style={{ display: "none" }}
-            accept=".pdf,.docx,.doc,.xlsx,.xls,.pptx,.ppt,.txt,.csv,.md,.json"
-            onChange={handleKBUpload}
-          />
-          <button
-            className="tools-item"
-            onClick={() => kbFileRef.current?.click()}
-            disabled={uploadStatus === "uploading"}
-          >
-            <div className="tools-item-text">
-              <strong>
-                {uploadStatus === "uploading"
-                  ? "Uploading..."
-                  : uploadStatus === "success"
-                  ? "Uploaded!"
-                  : "Upload to Knowledge Base"}
-              </strong>
-              <span>Add a document — PDF, Word, Excel, PowerPoint</span>
             </div>
           </button>
 
@@ -145,7 +102,6 @@ export default function Header({
   onReportIncident,
   onOpenChecklists,
   onOpenAnalytics,
-  onUploadToKB,
 }) {
   return (
     <header className="app-header">
@@ -180,7 +136,6 @@ export default function Header({
           onReportIncident={onReportIncident}
           onOpenChecklists={onOpenChecklists}
           onOpenAnalytics={onOpenAnalytics}
-          onUploadToKB={onUploadToKB}
         />
 
         {onSwitchPersona && (
