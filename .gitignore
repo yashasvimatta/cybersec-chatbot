@@ -3,6 +3,28 @@ node_modules/
 
 # Environment variables
 .env
+.env.*
+
+# Knowledge base (sensitive internal docs)
+kb_raw/
+
+# ChromaDB vector store (large binary, regenerated from kb_raw)
+chroma_db/
+chroma/
+
+# SQLite databases
+*.db
+*.db-shm
+*.db-wal
+
+# Python cache
+__pycache__/
+*.pyc
+*.pyo
+
+# Virtual environment
+.venv/
+venv/
 
 # Local data
 backend/data/
@@ -14,6 +36,7 @@ build/
 # Logs
 *.log
 npm-debug.log*
+nohup.out
 
 # OS files
 .DS_Store
@@ -24,4 +47,4 @@ Thumbs.db
 .idea/
 *.swp
 *.swo
-
+.cursor/

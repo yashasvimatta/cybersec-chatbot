@@ -2,10 +2,13 @@
 RAG Engine
 Handles document indexing, embeddings, vector search, and answer generation
 Now supports: Anthropic Claude, OpenAI GPT-4, and Google Gemini
+Optimized: batch embeddings, batch ChromaDB inserts, concurrent processing
 """
 import os
 import time
+import hashlib
 from typing import List, Dict, Tuple
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
 import chromadb
 from chromadb.config import Settings
@@ -17,10 +20,56 @@ import google.generativeai as genai
 load_dotenv()
 
 
+# ──────────────────────────────────────────────────────────────
+#  Core FAQ — always injected into prompts so the LLM can answer
+#  common cybersecurity questions even without a KB hit.
+#  Tailored for C&S Wholesale Groceries.
+# ──────────────────────────────────────────────────────────────
+CORE_FAQ = """
+## C&S Cybersecurity – Frequently Asked Questions
+
+### Secure Email Sharing (Encryption)
+Always use company-approved email encryption when sending sensitive information (e.g., personal data, financial details, confidential documents). Double-check recipients before sending, avoid auto-forwarding to personal accounts, and never send passwords in the same email as attachments. When unsure, contact the Cybersecurity Team.
+
+### Secure File Sharing
+Share files only through approved secure platforms (e.g., company cloud storage or secure collaboration tools). Set proper access permissions (least privilege), use password protection when required, and avoid using personal file-sharing apps. Revoke access when it is no longer needed.
+
+### Acceptable Use – Internet Browsing
+Use the internet primarily for business purposes. Avoid visiting suspicious, illegal, or non-work-related high-risk websites. Do not download unauthorized software. Follow company policies and ensure company devices are used responsibly and securely at all times.
+
+### Blocked Messages – Who Do I Contact?
+If a legitimate email or file is blocked, contact the IT Service Desk or Cybersecurity Team immediately. Do not attempt to bypass security controls. Provide details (sender, subject, time received) so the team can review and safely release it if appropriate.
+
+### Phishing – Suspicious Emails
+Do not click links, open attachments, or reply to suspicious emails. Report the email immediately using the company's phishing reporting tool or forward it to the Cybersecurity Team. Delete it only after reporting. If you accidentally clicked something, notify IT immediately.
+
+### What Can I Do to Help Keep Us Cyber Secure?
+- Practice safe browsing
+- Report phishing or suspicious activity immediately
+- Use strong, unique passwords and enable MFA
+- Never share credentials
+- Lock your device when unattended
+- Keep software updated
+- Follow company security policies
+Cybersecurity is everyone's responsibility.
+
+### Contact Information – Cybersecurity Team
+- **Email:** CyberSecurity@cswg.com
+- **Helpdesk Phone:** 603-354-7500
+- **Cybersecurity Website:** https://sites.google.com/cswg.com/cybersecurity
+
+If you see an error message, a blocked file, or anything suspicious — don't hesitate! Reach out to the Cybersecurity team immediately at **CyberSecurity@cswg.com** or call **603-354-7500**.
+
+For any security question — policy clarification, incident reporting, access requests, vendor security reviews — email **CyberSecurity@cswg.com**. The team is here to help, not to judge. No question is too small.
+
+Visit our Cybersecurity website for policies, training materials, and self-service resources: https://sites.google.com/cswg.com/cybersecurity
+""".strip()
+
+
 class SimpleTextSplitter:
-    """Simple text splitter to replace LangChain dependency"""
+    """Simple text splitter — larger chunks = fewer API calls = faster indexing"""
     
-    def __init__(self, chunk_size: int = 1000, chunk_overlap: int = 200):
+    def __init__(self, chunk_size: int = 2500, chunk_overlap: int = 200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
     
@@ -133,11 +182,14 @@ class RAGEngine:
                 self.embedding_model = 'text-embedding-3-small'
                 print("✓ Using OpenAI embeddings (text-embedding-3-small)")
         
-        # Text splitter for chunking documents
+        # Text splitter — larger chunks = fewer embeddings = faster
         self.text_splitter = SimpleTextSplitter(
-            chunk_size=1000,
+            chunk_size=2500,
             chunk_overlap=200
         )
+        
+        # Batch size for embedding API calls (Gemini supports up to 100)
+        self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', '100'))
         
         print(f"✓ RAG Engine initialized (LLM: {self.provider})")
     
@@ -204,67 +256,195 @@ class RAGEngine:
         print(f"   ⚠️  Using fallback model 'gemini-pro'")
         return 'gemini-pro'
     
+    def _doc_hash(self, content: str) -> str:
+        """Quick hash to detect unchanged documents"""
+        return hashlib.md5(content.encode('utf-8', errors='ignore')).hexdigest()
+
+    def _get_batch_embeddings(self, texts: List[str]) -> List[List[float]]:
+        """
+        Get embeddings for a BATCH of texts in a single API call.
+        Gemini embed_content supports list input — 1 call for 100 chunks.
+        """
+        if not texts:
+            return []
+        
+        if self.embedding_provider == 'gemini':
+            try:
+                result = genai.embed_content(
+                    model=self.embedding_model,
+                    content=texts,
+                    task_type="retrieval_document"
+                )
+                return result['embedding']
+            except Exception as e:
+                # Fallback: if batch fails, try individually
+                print(f"\n    ⚠️  Batch embed failed ({str(e)[:40]}), falling back to sequential")
+                return [self._get_embedding_with_retry(t) for t in texts]
+        else:
+            # OpenAI also supports batch
+            if self.openai_client:
+                response = self.openai_client.embeddings.create(
+                    model=self.embedding_model,
+                    input=texts
+                )
+                return [d.embedding for d in response.data]
+            return [self._get_embedding_with_retry(t) for t in texts]
+
+    def _index_single_doc(self, doc: Dict, doc_idx: int, total: int) -> int:
+        """Index a single document: chunk → batch embed → batch insert. Returns chunk count."""
+        try:
+            chunks = self.text_splitter.split_text(doc['content'])
+            if not chunks:
+                return 0
+            
+            print(f"  [{doc_idx}/{total}] 📄 {doc['name'][:50]} ({len(chunks)} chunks)", flush=True)
+            
+            all_ids = []
+            all_embeddings = []
+            all_documents = []
+            all_metadatas = []
+            
+            # Process in batches
+            for batch_start in range(0, len(chunks), self.embedding_batch_size):
+                batch = chunks[batch_start:batch_start + self.embedding_batch_size]
+                
+                # One API call for the entire batch
+                embeddings = self._get_batch_embeddings(batch)
+                
+                content_hash = doc.get('_content_hash', self._doc_hash(doc['content']))
+                for i, (chunk, emb) in enumerate(zip(batch, embeddings)):
+                    idx = batch_start + i
+                    all_ids.append(f"{doc['id']}_chunk_{idx}")
+                    all_embeddings.append(emb)
+                    all_documents.append(chunk)
+                    all_metadatas.append({
+                        'source_id': doc['id'],
+                        'source_name': doc['name'],
+                        'source_path': doc['path'],
+                        'chunk_index': idx,
+                        'modified_time': str(doc.get('modifiedTime', '')),
+                        'content_hash': content_hash
+                    })
+            
+            # Single batch insert into ChromaDB
+            if all_ids:
+                self.collection.upsert(
+                    ids=all_ids,
+                    embeddings=all_embeddings,
+                    documents=all_documents,
+                    metadatas=all_metadatas
+                )
+            
+            print(f"      ✓ {len(all_ids)} chunks indexed", flush=True)
+            return len(all_ids)
+        
+        except Exception as e:
+            print(f"      ❌ {doc['name'][:40]}: {str(e)[:60]}")
+            return 0
+
+    def _get_indexed_doc_hashes(self) -> Dict[str, str]:
+        """Get a map of source_id -> content_hash for all indexed docs."""
+        indexed = {}
+        try:
+            if self.collection.count() > 0:
+                existing = self.collection.get(include=['metadatas'])
+                for m in (existing.get('metadatas') or []):
+                    sid = m.get('source_id', '')
+                    h = m.get('content_hash', '')
+                    if sid and h:
+                        indexed[sid] = h
+        except Exception:
+            pass
+        return indexed
+
+    def _remove_doc_chunks(self, source_id: str):
+        """Remove all chunks for a given source_id."""
+        try:
+            existing = self.collection.get(
+                where={"source_id": source_id},
+                include=[]
+            )
+            if existing and existing.get('ids'):
+                self.collection.delete(ids=existing['ids'])
+        except Exception:
+            pass
+
     def index_documents(self, documents: List[Dict]) -> int:
         """
-        Index documents into vector database with better error handling
-        Returns number of chunks indexed
+        Index documents — FAST version with change detection.
+        - Skips unchanged docs (by content hash)
+        - Re-indexes modified docs automatically
+        - Removes deleted docs from the index
+        - Batch embeddings + batch ChromaDB upserts
+        - Parallel processing
         """
-        total_chunks = 0
         valid_docs = [d for d in documents if d['content'].strip()]
         
-        print(f"\n📚 Starting indexing of {len(valid_docs)} documents...")
+        # Get hashes of already-indexed docs
+        indexed_hashes = self._get_indexed_doc_hashes()
+        indexed_source_ids = set(indexed_hashes.keys())
+        current_source_ids = set(d['id'] for d in valid_docs)
+        
+        # Detect new, changed, and deleted docs
+        docs_to_index = []
+        skipped = 0
+        updated = 0
+        
+        for doc in valid_docs:
+            doc_hash = self._doc_hash(doc['content'])
+            old_hash = indexed_hashes.get(doc['id'])
+            
+            if old_hash == doc_hash:
+                skipped += 1  # Unchanged
+            elif old_hash is not None:
+                # File changed — remove old chunks, re-index
+                self._remove_doc_chunks(doc['id'])
+                doc['_content_hash'] = doc_hash
+                docs_to_index.append(doc)
+                updated += 1
+            else:
+                # New file
+                doc['_content_hash'] = doc_hash
+                docs_to_index.append(doc)
+        
+        # Remove docs that were deleted from kb_raw
+        deleted_ids = indexed_source_ids - current_source_ids
+        for sid in deleted_ids:
+            self._remove_doc_chunks(sid)
+        
+        total = len(docs_to_index)
+        print(f"\n📚 Index sync: {total} to index ({skipped} unchanged, {updated} updated, {len(deleted_ids)} removed)")
+        if total == 0:
+            print("✓ Index is up to date\n")
+            return 0
+        
         print("=" * 60)
+        start_time = time.time()
         
-        for doc_idx, doc in enumerate(valid_docs, 1):
-            try:
-                # Split document into chunks
-                chunks = self.text_splitter.split_text(doc['content'])
-                
-                print(f"\n[{doc_idx}/{len(valid_docs)}] 📄 {doc['name'][:50]}")
-                print(f"    ↳ Splitting: {len(chunks)} chunks...", end=" ", flush=True)
-                
-                chunks_processed = 0
-                for i, chunk in enumerate(chunks):
+        total_chunks = 0
+        max_workers = min(4, total)
+        
+        if max_workers <= 1 or total <= 2:
+            for idx, doc in enumerate(docs_to_index, 1):
+                total_chunks += self._index_single_doc(doc, idx, total)
+        else:
+            with ThreadPoolExecutor(max_workers=max_workers) as executor:
+                futures = {
+                    executor.submit(self._index_single_doc, doc, idx, total): doc
+                    for idx, doc in enumerate(docs_to_index, 1)
+                }
+                for future in as_completed(futures):
                     try:
-                        # Generate embedding with retry logic
-                        embedding = self._get_embedding_with_retry(chunk)
-                        
-                        # Create unique ID
-                        chunk_id = f"{doc['id']}_chunk_{i}"
-                        
-                        # Add to collection
-                        self.collection.add(
-                            ids=[chunk_id],
-                            embeddings=[embedding],
-                            documents=[chunk],
-                            metadatas=[{
-                                'source_id': doc['id'],
-                                'source_name': doc['name'],
-                                'source_path': doc['path'],
-                                'chunk_index': i,
-                                'modified_time': doc.get('modifiedTime', '')
-                            }]
-                        )
-                        
-                        total_chunks += 1
-                        chunks_processed += 1
-                        
-                        # Progress indicator every 5 chunks
-                        if chunks_processed % 5 == 0 or i == len(chunks) - 1:
-                            print(f"\r    ↳ Indexing: {chunks_processed}/{len(chunks)} chunks", end=" ", flush=True)
-                    
-                    except Exception as chunk_error:
-                        print(f"\n    ⚠️  Skipped chunk {i}: {str(chunk_error)[:60]}")
-                        continue
-                
-                print(f" ✓")
-                
-            except Exception as doc_error:
-                print(f"\n    ❌ Error processing document: {str(doc_error)[:60]}")
-                continue
+                        total_chunks += future.result()
+                    except Exception as e:
+                        doc = futures[future]
+                        print(f"      ❌ {doc['name'][:40]}: {str(e)[:60]}")
         
-        print("\n" + "=" * 60)
-        print(f"✓ Indexing complete: {total_chunks} chunks from {len(valid_docs)} documents")
+        elapsed = time.time() - start_time
+        print("=" * 60)
+        print(f"✓ Indexed {total_chunks} chunks from {total} docs in {elapsed:.1f}s")
+        if total_chunks > 0:
+            print(f"  Speed: {total_chunks / elapsed:.0f} chunks/sec")
         print("=" * 60 + "\n")
         return total_chunks
     
@@ -310,12 +490,13 @@ class RAGEngine:
         
         return relevant_docs
     
-    def generate_answer(self, query: str, relevant_docs: List[Dict], history: List[Dict] = None) -> Tuple[str, List[dict], float]:
+    def generate_answer(self, query: str, relevant_docs: List[Dict], history: List[Dict] = None, persona: Dict = None) -> Tuple[str, List[dict], float]:
         """
         Generate answer using LLM with retrieved context
         If relevant docs exist, answer based on them
         If no relevant docs, allow LLM to use its general knowledge
         history: optional list of {role, content} for conversation context
+        persona: optional dict with department and role
         Returns: (answer, sources, confidence_score)
         """
         history = history or []
@@ -326,10 +507,10 @@ class RAGEngine:
         # Create appropriate prompt based on whether we have context
         if context and relevant_docs:
             # We have relevant documents - use RAG mode
-            prompt = self._create_prompt_with_context(query, context, history)
+            prompt = self._create_prompt_with_context(query, context, history, persona)
         else:
             # No relevant documents - use general knowledge mode
-            prompt = self._create_prompt_general_knowledge(query, history)
+            prompt = self._create_prompt_general_knowledge(query, history, persona)
         
         # Generate answer based on provider
         if self.provider == 'gemini':
@@ -339,6 +520,9 @@ class RAGEngine:
         else:
             answer = self._generate_with_openai(prompt)
         
+        # Post-process: strip refusal phrases that Gemini sometimes inserts
+        answer = self._clean_refusals(answer, query)
+        
         # Extract sources (only if we used documents)
         sources = self._extract_sources(relevant_docs) if relevant_docs else []
         
@@ -346,6 +530,37 @@ class RAGEngine:
         confidence = self._calculate_confidence(relevant_docs) if relevant_docs else 0.0
         
         return answer, sources, confidence
+    
+    def _clean_refusals(self, answer: str, query: str) -> str:
+        """Strip refusal phrases from the response. If the entire response is a refusal, replace it."""
+        import re
+        
+        refusal_patterns = [
+            r"I\s*(am\s+)?sorry,?\s*but\s+I\s+cannot\b.*?\.",
+            r"I\s+cannot\s+answer\b.*?\.",
+            r"I\s+can'?t\s+provide\b.*?\.",
+            r"I\s+don'?t\s+have\s+(access|information|data)\b.*?\.",
+            r"I\s+am\s+unable\s+to\b.*?\.",
+            r"I\s+do\s+not\s+have\s+(the\s+)?(ability|information|access)\b.*?\.",
+            r"The\s+provided\s+knowledge\s+base\s+does\s+not\s+contain\b.*?\.",
+        ]
+        
+        cleaned = answer
+        for pat in refusal_patterns:
+            cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
+        
+        # Remove leftover blank lines
+        cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
+        
+        # If the entire response was a refusal (now empty), generate a fallback
+        if len(cleaned) < 20:
+            cleaned = (
+                f"I don't have specific information about \"{query}\" in our knowledge base yet. "
+                f"This topic may not be indexed. Try rephrasing your question, or ask me something "
+                f"about our security policies, incident response, or other indexed documents."
+            )
+        
+        return cleaned
     
     def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for text"""
@@ -421,28 +636,46 @@ class RAGEngine:
         """Create prompt for LLM - DEPRECATED, use the specific ones below"""
         return self._create_prompt_with_context(query, context)
     
-    def _create_prompt_with_context(self, query: str, context: str, history: List[Dict] = None) -> str:
+    def _create_prompt_with_context(self, query: str, context: str, history: List[Dict] = None, persona: Dict = None) -> str:
         """Create prompt for answering based on documents (RAG mode)"""
         history = history or []
         history_block = ""
         if history:
             history_block = "\n\nRecent conversation:\n" + "\n".join(
                 f"{'User' if h['role']=='user' else 'Assistant'}: {h['content'][:500]}"
-                for h in history[-6:]  # Last 3 exchanges
+                for h in history[-6:]
             ) + "\n\n"
         
-        return f"""You are an internal assistant for C&S Wholesale Groceries. You have DIRECT ACCESS to the organization's knowledge base (kb_raw). The context below was retrieved from company documents.
+        persona_block = ""
+        if persona:
+            dept = persona.get("department", "Unknown")
+            role = persona.get("role", "Team Member")
+            persona_block = f"""
+**USER CONTEXT:** The user works in the **{dept}** department as a **{role}**.
+Tailor your answer to be relevant and actionable for someone in this role. Use terminology they'd understand. Highlight what matters most to {dept} — for example, if they're in Finance focus on financial controls and compliance; if HR focus on employee data protection and access management; if IS focus on technical details and procedures.
+"""
+        
+        return f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
 
-**CRITICAL:** Use the provided context to answer. Do NOT say you don't have access, lack permission, or cannot access this data—you DO have it. Answer directly from the context. If the context doesn't contain the exact information, say what you found and what's missing. Always cite the source document(s).
-{history_block}
-Context from knowledge base (kb_raw):
+RULES:
+- Answer every question. Do not refuse, apologize, or say "I'm sorry but I cannot". Just answer.
+- If you have relevant info below, use it. Summarize clearly with headings, bullets, and bold.
+- If the info below doesn't fully cover the question, share what you have AND fill in the gaps using your general knowledge. Say "Based on our documents..." for kb_raw info and "Additionally..." for general knowledge.
+- If you truly have zero relevant info, still give a helpful general answer. Never leave the user empty-handed.
+- No source citations like "(Source 1)" or "[Source 2]". Answer naturally.
+- Format well: use **bold** for key terms, bullet lists for steps, headings for sections.
+{persona_block}{history_block}
+--- CORE CYBERSECURITY FAQ (always available) ---
+{CORE_FAQ}
+
+--- COMPANY DOCUMENTS (from knowledge base) ---
 {context}
 
-User Question: {query}
+Question: {query}
 
 Answer:"""
     
-    def _create_prompt_general_knowledge(self, query: str, history: List[Dict] = None) -> str:
+    def _create_prompt_general_knowledge(self, query: str, history: List[Dict] = None, persona: Dict = None) -> str:
         """Create prompt for answering general knowledge questions (when no documents are relevant)"""
         history = history or []
         history_block = ""
@@ -452,32 +685,78 @@ Answer:"""
                 for h in history[-6:]
             ) + "\n\n"
         
-        return f"""You are an internal assistant for C&S Wholesale Groceries.
+        persona_block = ""
+        if persona:
+            dept = persona.get("department", "Unknown")
+            role = persona.get("role", "Team Member")
+            persona_block = f"""
+**USER CONTEXT:** The user works in **{dept}** as a **{role}**. Tailor your answer to their role and department.
+"""
+        
+        return f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
 
-No relevant documents were found in the knowledge base (kb_raw) for this query. This may mean: (1) documents need to be indexed—run: python index_local.py, or (2) the information isn't in kb_raw yet. Do NOT claim you lack access due to security/privacy—the issue is retrieval. Suggest indexing or checking if the document exists in kb_raw.
-{history_block}
-User Question: {query}
+RULES:
+- Answer every question. Do not refuse, apologize, or say "I'm sorry but I cannot". Just answer.
+- No matching company documents were found for this query. Use the Core FAQ below and your general knowledge to give a helpful, thorough answer.
+- If the question is about a C&S-specific topic (like a specific tool, person, or internal process), say you don't have that specific info in the knowledge base yet but provide any general guidance that could help.
+- Format well: use **bold** for key terms, bullet lists for steps, headings for sections.
+{persona_block}{history_block}
+--- CORE CYBERSECURITY FAQ (always available) ---
+{CORE_FAQ}
+
+Question: {query}
 
 Answer:"""
     
-    def _generate_with_gemini(self, prompt: str) -> str:
-        """Generate answer using Google Gemini"""
-        try:
-            response = self.llm_client.generate_content(prompt)
-            return response.text
-        except Exception as e:
-            error_msg = str(e)
-            if "not found" in error_msg.lower() or "not supported" in error_msg.lower():
-                # Model is no longer available, try to find a new one
-                print(f"\n⚠️  Current model {self.model} is no longer available")
-                new_model = self._find_available_gemini_model()
-                if new_model != self.model:
-                    print(f"   Switching to {new_model}...")
-                    self.model = new_model
-                    self.llm_client = genai.GenerativeModel(self.model)
-                    # Retry with new model
-                    return self._generate_with_gemini(prompt)
-            raise
+    def _generate_with_gemini(self, prompt: str, _retries: int = 3) -> str:
+        """Generate answer using Google Gemini with relaxed safety settings and retry logic"""
+        import time as _time
+        last_error = None
+        for attempt in range(_retries):
+            try:
+                response = self.llm_client.generate_content(
+                    prompt,
+                    safety_settings={
+                        'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
+                        'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
+                        'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
+                        'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE',
+                    }
+                )
+                # Handle blocked responses
+                if not response.parts:
+                    if hasattr(response, 'prompt_feedback') and response.prompt_feedback:
+                        print(f"  ⚠ Gemini blocked response: {response.prompt_feedback}")
+                    return "I'm happy to help with that question. Could you rephrase it slightly? I want to make sure I give you the best answer."
+                return response.text
+            except Exception as e:
+                last_error = e
+                error_msg = str(e).lower()
+                if "not found" in error_msg or "not supported" in error_msg:
+                    # Model is no longer available, try to find a new one
+                    print(f"\n⚠️  Current model {self.model} is no longer available")
+                    new_model = self._find_available_gemini_model()
+                    if new_model != self.model:
+                        print(f"   Switching to {new_model}...")
+                        self.model = new_model
+                        self.llm_client = genai.GenerativeModel(self.model)
+                        continue  # retry with new model
+                    raise
+                elif "429" in str(e) or "resource" in error_msg or "quota" in error_msg or "rate" in error_msg:
+                    # Rate limit — back off and retry
+                    wait = 2 ** attempt
+                    print(f"  ⚠ Gemini rate limit (attempt {attempt+1}/{_retries}), waiting {wait}s...")
+                    _time.sleep(wait)
+                    continue
+                elif attempt < _retries - 1:
+                    # Transient error — retry once
+                    wait = 1.5 * (attempt + 1)
+                    print(f"  ⚠ Gemini error (attempt {attempt+1}/{_retries}): {str(e)[:120]}, retrying in {wait}s...")
+                    _time.sleep(wait)
+                    continue
+                else:
+                    raise
+        raise last_error
     
     def _generate_with_anthropic(self, prompt: str) -> str:
         """Generate answer using Anthropic Claude"""
