@@ -1,0 +1,271 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1400 1600" style="background-color: white;">
+  <defs>
+    <style>
+      .title { font-family: Arial, sans-serif; font-size: 32px; font-weight: bold; fill: #1e293b; }
+      .subtitle { font-family: Arial, sans-serif; font-size: 16px; fill: #64748b; }
+      .layer-title { font-family: Arial, sans-serif; font-size: 20px; font-weight: bold; fill: #1e293b; }
+      .box-title { font-family: Arial, sans-serif; font-size: 14px; font-weight: bold; fill: #1e293b; }
+      .box-text { font-family: Arial, sans-serif; font-size: 11px; fill: #475569; }
+      .arrow-text { font-family: Arial, sans-serif; font-size: 11px; fill: #64748b; font-style: italic; }
+      
+      .frontend-box { fill: #dbeafe; stroke: #3b82f6; stroke-width: 2; }
+      .api-box { fill: #d1fae5; stroke: #10b981; stroke-width: 2; }
+      .business-box { fill: #fef3c7; stroke: #f59e0b; stroke-width: 2; }
+      .data-box { fill: #e9d5ff; stroke: #a855f7; stroke-width: 2; }
+      .external-box { fill: #fce7f3; stroke: #ec4899; stroke-width: 2; }
+      
+      .arrow { stroke: #64748b; stroke-width: 2; fill: none; marker-end: url(#arrowhead); }
+      .thick-arrow { stroke: #3b82f6; stroke-width: 3; fill: none; marker-end: url(#arrowhead-blue); }
+    </style>
+    
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#64748b" />
+    </marker>
+    
+    <marker id="arrowhead-blue" markerWidth="10" markerHeight="10" refX="9" refY="3" orient="auto">
+      <polygon points="0 0, 10 3, 0 6" fill="#3b82f6" />
+    </marker>
+  </defs>
+  
+  <!-- Title -->
+  <text x="700" y="40" text-anchor="middle" class="title">Fiona - System Architecture</text>
+  <text x="700" y="65" text-anchor="middle" class="subtitle">C&S Cybersecurity Assistant Platform</text>
+  
+  <!-- Layer 1: Client Layer -->
+  <rect x="50" y="100" width="1300" height="180" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="8"/>
+  <text x="70" y="130" class="layer-title">📱 Client Layer (React Frontend)</text>
+  
+  <rect x="80" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="170" y="175" text-anchor="middle" class="box-title">Chat Interface</text>
+  <text x="170" y="195" text-anchor="middle" class="box-text">Real-time messaging</text>
+  <text x="170" y="210" text-anchor="middle" class="box-text">Markdown rendering</text>
+  <text x="170" y="225" text-anchor="middle" class="box-text">Source citations</text>
+  <text x="170" y="240" text-anchor="middle" class="box-text">Follow-up suggestions</text>
+  
+  <rect x="280" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="370" y="175" text-anchor="middle" class="box-title">Persona System</text>
+  <text x="370" y="195" text-anchor="middle" class="box-text">9 Departments</text>
+  <text x="370" y="210" text-anchor="middle" class="box-text">Role-based onboarding</text>
+  <text x="370" y="225" text-anchor="middle" class="box-text">Tailored suggestions</text>
+  <text x="370" y="240" text-anchor="middle" class="box-text">Security tips</text>
+  
+  <rect x="480" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="570" y="175" text-anchor="middle" class="box-title">Incident Reporting</text>
+  <text x="570" y="195" text-anchor="middle" class="box-text">Structured forms</text>
+  <text x="570" y="210" text-anchor="middle" class="box-text">Email integration</text>
+  <text x="570" y="225" text-anchor="middle" class="box-text">Reference tracking</text>
+  <text x="570" y="240" text-anchor="middle" class="box-text">Urgency levels</text>
+  
+  <rect x="680" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="770" y="175" text-anchor="middle" class="box-title">Checklists</text>
+  <text x="770" y="195" text-anchor="middle" class="box-text">Interactive tasks</text>
+  <text x="770" y="210" text-anchor="middle" class="box-text">Progress tracking</text>
+  <text x="770" y="225" text-anchor="middle" class="box-text">LocalStorage persist</text>
+  <text x="770" y="240" text-anchor="middle" class="box-text">6 checklist types</text>
+  
+  <rect x="880" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="970" y="175" text-anchor="middle" class="box-title">Analytics</text>
+  <text x="970" y="195" text-anchor="middle" class="box-text">Query metrics</text>
+  <text x="970" y="210" text-anchor="middle" class="box-text">Satisfaction rates</text>
+  <text x="970" y="225" text-anchor="middle" class="box-text">Dept breakdowns</text>
+  <text x="970" y="240" text-anchor="middle" class="box-text">Knowledge gaps</text>
+  
+  <rect x="1080" y="150" width="180" height="110" class="frontend-box" rx="6"/>
+  <text x="1170" y="175" text-anchor="middle" class="box-title">Theme & UI</text>
+  <text x="1170" y="195" text-anchor="middle" class="box-text">Dark/Light mode</text>
+  <text x="1170" y="210" text-anchor="middle" class="box-text">Responsive design</text>
+  <text x="1170" y="225" text-anchor="middle" class="box-text">Custom CSS</text>
+  <text x="1170" y="240" text-anchor="middle" class="box-text">Axios HTTP</text>
+  
+  <!-- Arrow to API Layer -->
+  <path d="M 700 280 L 700 320" class="thick-arrow"/>
+  <text x="720" y="305" class="arrow-text">HTTP REST API</text>
+  
+  <!-- Layer 2: API Gateway -->
+  <rect x="50" y="330" width="1300" height="180" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="8"/>
+  <text x="70" y="360" class="layer-title">🌐 API Gateway Layer (FastAPI + Uvicorn)</text>
+  
+  <rect x="150" y="380" width="200" height="110" class="api-box" rx="6"/>
+  <text x="250" y="405" text-anchor="middle" class="box-title">FastAPI Server</text>
+  <text x="250" y="425" text-anchor="middle" class="box-text">ASGI async endpoints</text>
+  <text x="250" y="440" text-anchor="middle" class="box-text">CORS middleware</text>
+  <text x="250" y="455" text-anchor="middle" class="box-text">Pydantic validation</text>
+  <text x="250" y="470" text-anchor="middle" class="box-text">Session management</text>
+  
+  <rect x="380" y="380" width="160" height="110" class="api-box" rx="6"/>
+  <text x="460" y="405" text-anchor="middle" class="box-title">Chat API</text>
+  <text x="460" y="425" text-anchor="middle" class="box-text">POST /chat</text>
+  <text x="460" y="440" text-anchor="middle" class="box-text">POST /query</text>
+  <text x="460" y="455" text-anchor="middle" class="box-text">POST /reset</text>
+  <text x="460" y="470" text-anchor="middle" class="box-text">GET /history</text>
+  
+  <rect x="560" y="380" width="160" height="110" class="api-box" rx="6"/>
+  <text x="640" y="405" text-anchor="middle" class="box-title">Admin API</text>
+  <text x="640" y="425" text-anchor="middle" class="box-text">POST /index</text>
+  <text x="640" y="440" text-anchor="middle" class="box-text">POST /refresh</text>
+  <text x="640" y="455" text-anchor="middle" class="box-text">GET /stats</text>
+  <text x="640" y="470" text-anchor="middle" class="box-text">GET /health</text>
+  
+  <rect x="740" y="380" width="160" height="110" class="api-box" rx="6"/>
+  <text x="820" y="405" text-anchor="middle" class="box-title">Incident API</text>
+  <text x="820" y="425" text-anchor="middle" class="box-text">POST /incident</text>
+  <text x="820" y="440" text-anchor="middle" class="box-text">POST /escalate</text>
+  <text x="820" y="455" text-anchor="middle" class="box-text">POST /feedback</text>
+  <text x="820" y="470" text-anchor="middle" class="box-text">GET /incidents</text>
+  
+  <rect x="920" y="380" width="160" height="110" class="api-box" rx="6"/>
+  <text x="1000" y="405" text-anchor="middle" class="box-title">Analytics API</text>
+  <text x="1000" y="425" text-anchor="middle" class="box-text">GET /analytics</text>
+  <text x="1000" y="440" text-anchor="middle" class="box-text">GET /popular</text>
+  <text x="1000" y="455" text-anchor="middle" class="box-text">GET /gaps</text>
+  <text x="1000" y="470" text-anchor="middle" class="box-text">GET /checklists</text>
+  
+  <rect x="1100" y="380" width="160" height="110" class="api-box" rx="6"/>
+  <text x="1180" y="405" text-anchor="middle" class="box-title">Utility API</text>
+  <text x="1180" y="425" text-anchor="middle" class="box-text">GET /tip</text>
+  <text x="1180" y="440" text-anchor="middle" class="box-text">POST /subscribe</text>
+  <text x="1180" y="455" text-anchor="middle" class="box-text">POST /acknowledge</text>
+  <text x="1180" y="470" text-anchor="middle" class="box-text">GET /digest</text>
+  
+  <!-- Arrow to Business Logic -->
+  <path d="M 700 510 L 700 550" class="thick-arrow"/>
+  <text x="720" y="535" class="arrow-text">Business Logic</text>
+  
+  <!-- Layer 3: Business Logic -->
+  <rect x="50" y="560" width="1300" height="180" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="8"/>
+  <text x="70" y="590" class="layer-title">🧠 Business Logic Layer</text>
+  
+  <rect x="100" y="610" width="220" height="110" class="business-box" rx="6"/>
+  <text x="210" y="635" text-anchor="middle" class="box-title">RAG Engine</text>
+  <text x="210" y="655" text-anchor="middle" class="box-text">Query embedding generation</text>
+  <text x="210" y="670" text-anchor="middle" class="box-text">Similarity search (top-5)</text>
+  <text x="210" y="685" text-anchor="middle" class="box-text">Context assembly</text>
+  <text x="210" y="700" text-anchor="middle" class="box-text">Answer synthesis + citations</text>
+  
+  <rect x="340" y="610" width="200" height="110" class="business-box" rx="6"/>
+  <text x="440" y="635" text-anchor="middle" class="box-title">Document Handler</text>
+  <text x="440" y="655" text-anchor="middle" class="box-text">PDF (PyPDF2)</text>
+  <text x="440" y="670" text-anchor="middle" class="box-text">DOCX (python-docx)</text>
+  <text x="440" y="685" text-anchor="middle" class="box-text">XLSX (openpyxl)</text>
+  <text x="440" y="700" text-anchor="middle" class="box-text">PPTX, CSV, TXT</text>
+  
+  <rect x="560" y="610" width="180" height="110" class="business-box" rx="6"/>
+  <text x="650" y="635" text-anchor="middle" class="box-title">Text Splitter</text>
+  <text x="650" y="655" text-anchor="middle" class="box-text">2500 char chunks</text>
+  <text x="650" y="670" text-anchor="middle" class="box-text">200 char overlap</text>
+  <text x="650" y="685" text-anchor="middle" class="box-text">Smart boundaries</text>
+  <text x="650" y="700" text-anchor="middle" class="box-text">Content hashing</text>
+  
+  <rect x="760" y="610" width="180" height="110" class="business-box" rx="6"/>
+  <text x="850" y="635" text-anchor="middle" class="box-title">File Watcher</text>
+  <text x="850" y="655" text-anchor="middle" class="box-text">Real-time monitoring</text>
+  <text x="850" y="670" text-anchor="middle" class="box-text">watchfiles library</text>
+  <text x="850" y="685" text-anchor="middle" class="box-text">Auto re-indexing</text>
+  <text x="850" y="700" text-anchor="middle" class="box-text">Debounced triggers</text>
+  
+  <rect x="960" y="610" width="180" height="110" class="business-box" rx="6"/>
+  <text x="1050" y="635" text-anchor="middle" class="box-title">Security Tips</text>
+  <text x="1050" y="655" text-anchor="middle" class="box-text">30+ curated tips</text>
+  <text x="1050" y="670" text-anchor="middle" class="box-text">Daily rotation</text>
+  <text x="1050" y="685" text-anchor="middle" class="box-text">Dept filtering</text>
+  <text x="1050" y="700" text-anchor="middle" class="box-text">Category tagging</text>
+  
+  <rect x="1160" y="610" width="180" height="110" class="business-box" rx="6"/>
+  <text x="1250" y="635" text-anchor="middle" class="box-title">Email Service</text>
+  <text x="1250" y="655" text-anchor="middle" class="box-text">mailto: builder</text>
+  <text x="1250" y="670" text-anchor="middle" class="box-text">Incident templates</text>
+  <text x="1250" y="685" text-anchor="middle" class="box-text">Escalation templates</text>
+  <text x="1250" y="700" text-anchor="middle" class="box-text">URL encoding</text>
+  
+  <!-- Arrow to Data Layer -->
+  <path d="M 700 740 L 700 780" class="thick-arrow"/>
+  <text x="720" y="765" class="arrow-text">Data Access</text>
+  
+  <!-- Layer 4: Data Layer -->
+  <rect x="50" y="790" width="1300" height="180" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="8"/>
+  <text x="70" y="820" class="layer-title">💾 Data Layer</text>
+  
+  <rect x="150" y="840" width="280" height="110" class="data-box" rx="6"/>
+  <text x="290" y="865" text-anchor="middle" class="box-title">ChromaDB (Vector Database)</text>
+  <text x="290" y="885" text-anchor="middle" class="box-text">SQLite-based storage</text>
+  <text x="290" y="900" text-anchor="middle" class="box-text">Document embeddings + metadata</text>
+  <text x="290" y="915" text-anchor="middle" class="box-text">Similarity search (cosine)</text>
+  <text x="290" y="930" text-anchor="middle" class="box-text">Incremental updates</text>
+  
+  <rect x="460" y="840" width="320" height="110" class="data-box" rx="6"/>
+  <text x="620" y="865" text-anchor="middle" class="box-title">Application Database (SQLite WAL)</text>
+  <text x="620" y="885" text-anchor="middle" class="box-text">feedback, conversations, incidents</text>
+  <text x="620" y="900" text-anchor="middle" class="box-text">escalations, analytics_events</text>
+  <text x="620" y="915" text-anchor="middle" class="box-text">acknowledgments, subscriptions</text>
+  <text x="620" y="930" text-anchor="middle" class="box-text">Thread-safe connections</text>
+  
+  <rect x="810" y="840" width="280" height="110" class="data-box" rx="6"/>
+  <text x="950" y="865" text-anchor="middle" class="box-title">Knowledge Base (kb_raw/)</text>
+  <text x="950" y="885" text-anchor="middle" class="box-text">Local filesystem</text>
+  <text x="950" y="900" text-anchor="middle" class="box-text">Policies, procedures, threat intel</text>
+  <text x="950" y="915" text-anchor="middle" class="box-text">Compliance docs, training</text>
+  <text x="950" y="930" text-anchor="middle" class="box-text">Recursive folder scanning</text>
+  
+  <!-- Arrow to External Services -->
+  <path d="M 350 970 L 350 1030" class="thick-arrow"/>
+  <text x="370" y="1005" class="arrow-text">API Calls</text>
+  
+  <!-- Layer 5: External Services -->
+  <rect x="50" y="1040" width="800" height="180" fill="#f8fafc" stroke="#cbd5e1" stroke-width="2" rx="8"/>
+  <text x="70" y="1070" class="layer-title">🌍 External Services</text>
+  
+  <rect x="250" y="1090" width="300" height="110" class="external-box" rx="6"/>
+  <text x="400" y="1115" text-anchor="middle" class="box-title">Google Gemini API</text>
+  <text x="400" y="1135" text-anchor="middle" class="box-text">Gemini 1.5 Flash (LLM)</text>
+  <text x="400" y="1150" text-anchor="middle" class="box-text">text-embedding-004 (Embeddings)</text>
+  <text x="400" y="1165" text-anchor="middle" class="box-text">768-dimensional vectors</text>
+  <text x="400" y="1180" text-anchor="middle" class="box-text">API: google.generativeai</text>
+  
+  <!-- Data Flow Arrows -->
+  <path d="M 210 970 L 350 1090" class="arrow"/>
+  <text x="280" y="1030" class="arrow-text">LLM + Embeddings</text>
+  
+  <path d="M 950 840 L 850 720" class="arrow"/>
+  <text x="900" y="780" class="arrow-text">watches</text>
+  
+  <path d="M 440 610 L 950 840" class="arrow"/>
+  <text x="700" y="730" class="arrow-text">extracts from</text>
+  
+  <path d="M 650 610 L 290 840" class="arrow"/>
+  <text x="470" y="730" class="arrow-text">chunks to</text>
+  
+  <!-- Key Flow Annotations -->
+  <rect x="900" y="1040" width="450" height="180" fill="#fef3c7" stroke="#f59e0b" stroke-width="2" rx="8"/>
+  <text x="920" y="1070" class="layer-title">🔄 Key Data Flows</text>
+  
+  <text x="920" y="1100" class="box-text" font-weight="bold">1. Query Flow:</text>
+  <text x="920" y="1118" class="box-text">User → React → /chat → RAG → ChromaDB → LLM → Response</text>
+  
+  <text x="920" y="1140" class="box-text" font-weight="bold">2. Indexing Flow:</text>
+  <text x="920" y="1158" class="box-text">kb_raw → Doc Handler → Splitter → Embeddings → ChromaDB</text>
+  
+  <text x="920" y="1180" class="box-text" font-weight="bold">3. Real-time Updates:</text>
+  <text x="920" y="1198" class="box-text">File Watcher → Auto Re-index → ChromaDB (incremental)</text>
+  
+  <!-- Statistics Box -->
+  <rect x="50" y="1270" width="1300" height="140" fill="#e0f2fe" stroke="#0284c7" stroke-width="2" rx="8"/>
+  <text x="70" y="1300" class="layer-title">📊 System Statistics</text>
+  
+  <text x="100" y="1330" class="box-text" font-weight="bold">Tech Stack:</text>
+  <text x="100" y="1348" class="box-text">• Frontend: React 18 + Vite + Custom CSS | Backend: FastAPI + Python 3.11 + Uvicorn</text>
+  <text x="100" y="1366" class="box-text">• AI: Google Gemini 1.5 Flash (LLM) + text-embedding-004 (Embeddings)</text>
+  <text x="100" y="1384" class="box-text">• Data: ChromaDB (vectors) + SQLite (app data) + Local filesystem (kb_raw)</text>
+  
+  <text x="800" y="1330" class="box-text" font-weight="bold">Key Features:</text>
+  <text x="800" y="1348" class="box-text">• 9 Department personas with tailored content</text>
+  <text x="800" y="1366" class="box-text">• Real-time file watching & auto-indexing</text>
+  <text x="800" y="1384" class="box-text">• Incident reporting + Analytics dashboard</text>
+  
+  <!-- Footer -->
+  <text x="700" y="1480" text-anchor="middle" class="box-text" font-style="italic">
+    Fiona - AI-Powered Cybersecurity Assistant | C&S Wholesale Groceries
+  </text>
+  <text x="700" y="1500" text-anchor="middle" class="box-text" font-size="9px">
+    Architecture v1.0 | Created: 2024
+  </text>
+</svg>
