@@ -1,95 +1,104 @@
-# C&S Wholesale Groceries - Cybersecurity Chat Assistant
+# Fiona: Cybersecurity RAG Assistant
 
-AI-powered cybersecurity assistant built with React and Node.js.
+Fiona is a local-first cybersecurity assistant for internal knowledge retrieval and employee support.
+
+It combines:
+- a React frontend
+- a FastAPI backend
+- RAG over local documents in `kb_raw/`
+- ChromaDB for vector search
+- SQLite for conversations, incidents, feedback, and analytics
+
+## Architecture
+
+- Blueprint: `ARCHITECTURE_BLUEPRINT.md`
+- Diagram: `docs/fiona-architecture-diagram.svg`
+
+## Tech Stack
+
+- Frontend: React 18, Vite, Axios
+- Backend: Python 3.11, FastAPI, Uvicorn, Pydantic
+- RAG/AI: Google Gemini (default), optional OpenAI/Anthropic
+- Vector DB: ChromaDB (`chroma_db/`)
+- App DB: SQLite (`fiona.db`)
+- File parsing: PyPDF2, python-docx, python-pptx, pandas/openpyxl
+
+## Repository Layout
+
+- `main_local.py`: Backend API entrypoint
+- `rag_engine.py`: Chunking, embeddings, retrieval, answer generation
+- `local_file_handler.py`: Reads/extracts text from local files
+- `database.py`: SQLite persistence layer
+- `frontend/`: React client
+- `kb_raw/`: Source knowledge base documents
+- `chroma_db/`: Vector store persistence
 
 ## Quick Start
 
-### Prerequisites
-- Node.js 20+
-- Google Gemini API key ([Get one here](https://aistudio.google.com/apikey))
+### 1. Install backend dependencies
 
-### Installation
-
-**1. Clone the repository**
 ```bash
-git clone <your-repo-url>
-cd cybersec-chatbot
+pip install -r requirements.txt
 ```
 
-**2. Setup Backend**
-```bash
-cd backend
-npm install
-cp .env.example .env
-# Edit .env and add your Google Gemini API key
-npm start
+### 2. Create `.env`
+
+Create `.env` in repo root with at least:
+
+```env
+GEMINI_API_KEY=your-key
+KB_FOLDER=kb_raw
+LLM_PROVIDER=gemini
+EMBEDDING_PROVIDER=gemini
 ```
 
-**3. Setup Frontend (new terminal)**
+### 3. Start backend
+
+```bash
+python main_local.py
+```
+
+Backend runs at `http://localhost:8000`.
+
+### 4. Start frontend
+
+In a second terminal:
+
 ```bash
 cd frontend
 npm install
 npm run dev
 ```
 
-**4. Open in browser**
-```
-http://localhost:5173
-```
+Frontend runs at `http://localhost:5173`.
 
-## 📁 Project Structure
+### 5. Index documents (optional manual trigger)
 
-```
-├── backend/          # Node.js + Express API
-│   ├── server.js
-│   └── package.json
-│
-└── frontend/         # Vue.js + Vite
-    ├── src/
-    ├── main.jsx
-    └── package.json
+In a new terminal:
+
+```bash
+python index_local.py
 ```
 
-## 🔧 Configuration
+Note: backend also auto-syncs `kb_raw/` on startup and watches for file changes.
 
-### Backend (.env)
-```env
-GEMINI_API_KEY=your_gemini_api_key_here
-GEMINI_MODEL=gemini-3-flash-preview
-DRIVE_FOLDER=your_drive_folder_id_or_link_here
-DRIVE_SYNC_INTERVAL_MINUTES=30
-RAG_TOP_K=5
-PORT=3001
-```
+## Useful Endpoints
 
-### Knowledge base (Google Drive → Gemini RAG)
-- **What it does**: the backend periodically scans the Drive folder, downloads text from supported files (Google Docs/Sheets/Slides + text-ish files), chunks + embeds it, and then injects the most relevant snippets into each chat request.
-- **Auth**: uses Google Drive API via Application Default Credentials (recommended: set `GOOGLE_APPLICATION_CREDENTIALS` to a service-account JSON, then share the folder with that service account email).
+- `GET /health`
+- `POST /chat`
+- `POST /index`
+- `POST /refresh`
+- `GET /stats`
+- `POST /incident`
+- `POST /escalate`
+- `GET /analytics/summary`
 
-## 🛠️ Tech Stack
+## Data Storage Clarification
 
-- **Frontend:** React, Vite, Axios
-- **Backend:** Node.js, Express, Google Gemini API
-- **Styling:** CSS3
+Both databases are used:
+- ChromaDB stores embeddings/chunks for semantic retrieval.
+- SQLite stores operational app data (history, feedback, incidents, analytics, subscriptions).
 
-## 📝 Features
+## Notes
 
-✅ AI-powered cybersecurity guidance  
-✅ Conversation memory (10 exchanges)  
-✅ Real-time responses  
-✅ Clean component architecture  
-✅ Responsive design  
-
-## ⚠️ Security Notes
-
-- Never commit `.env` files
-- Keep your Google Gemini API key private
-- This is a demo - add authentication for production use
-
-## 📄 License
-
-MIT
-
----
-
-Built for C&S Wholesale Groceries 🏪
+For detailed local setup and extended usage examples, see `README_LOCAL.md`.
