@@ -8,10 +8,6 @@ node_modules/
 # Knowledge base (sensitive internal docs)
 kb_raw/
 
-# ChromaDB vector store (large binary, regenerated from kb_raw)
-chroma_db/
-chroma/
-
 # SQLite databases
 *.db
 *.db-shm

@@ -96,7 +96,6 @@ export default function Header({
   status = "Connected",
   onReset,
   persona,
-  onSwitchPersona,
   theme,
   onToggleTheme,
   onReportIncident,
@@ -137,12 +136,6 @@ export default function Header({
           onOpenChecklists={onOpenChecklists}
           onOpenAnalytics={onOpenAnalytics}
         />
-
-        {onSwitchPersona && (
-          <button className="btn btn-outline" onClick={onSwitchPersona} title="Change department/role">
-            Switch Role
-          </button>
-        )}
 
         <button className="btn btn-danger" onClick={onReset}>
           Reset Chat

@@ -1,6 +1,6 @@
 import React, { useEffect, useMemo, useState } from "react";
 import axios from "axios";
-import Onboarding from "./components/Onboarding.jsx";
+import Sidebar from "./components/Sidebar.jsx";
 import Header from "./components/Header.jsx";
 import ChatWindow from "./components/ChatWindow.jsx";
 import ChatInput from "./components/ChatInput.jsx";
@@ -23,6 +23,7 @@ export default function App() {
   const [inputMessage, setInputMessage] = useState("");
   const [isTyping, setIsTyping] = useState(false);
   const [status, setStatus] = useState("Connected");
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
 
   // Modal states
   const [showIncidentReport, setShowIncidentReport] = useState(false);
@@ -61,10 +62,14 @@ export default function App() {
     }
   };
 
+  // Initial health check
+  useEffect(() => {
+    checkHealth();
+  }, []);
+
   // Load tip of the day + popular questions on persona set
   useEffect(() => {
     if (!persona) return;
-    checkHealth();
 
     // Tip
     axios
@@ -152,8 +157,10 @@ export default function App() {
     }
   };
 
-  const switchPersona = () => {
-    setPersona(null);
+  // ── Persona change from sidebar ─────────────────────────
+
+  const handlePersonaChange = (newPersona) => {
+    setPersona(newPersona);
     setMessages([]);
     setTip(null);
     setTipDismissed(false);
@@ -236,74 +243,83 @@ export default function App() {
     return res.data;
   };
 
-  // ── Onboarding ────────────────────────────────────────
-
-  if (!persona) {
-    return (
-      <Onboarding
-        onComplete={(p) => setPersona(p)}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-      />
-    );
-  }
-
   return (
-    <div className="app-container">
-      <Header
-        status={status}
-        onReset={resetChat}
+    <div className="app-layout">
+      <Sidebar
         persona={persona}
-        onSwitchPersona={switchPersona}
-        theme={theme}
-        onToggleTheme={toggleTheme}
-        onReportIncident={() => setShowIncidentReport(true)}
-        onOpenChecklists={() => setShowChecklists(true)}
-        onOpenAnalytics={() => setShowAnalytics(true)}
+        onPersonaChange={handlePersonaChange}
+        collapsed={sidebarCollapsed}
+        onToggleCollapse={() => setSidebarCollapsed((c) => !c)}
       />
 
-      <div className="container">
-        <ChatWindow
-          messages={messages}
-          isTyping={isTyping}
-          onSendSuggestion={(text) => sendMessage(text)}
+      <div className="app-main">
+        <Header
+          status={status}
+          onReset={resetChat}
           persona={persona}
-          onFeedback={handleFeedback}
-          onEscalate={handleEscalate}
-          tip={tipDismissed ? null : tip}
-          onDismissTip={() => setTipDismissed(true)}
-          popularQuestions={popularQuestions}
+          theme={theme}
+          onToggleTheme={toggleTheme}
+          onReportIncident={() => setShowIncidentReport(true)}
+          onOpenChecklists={() => setShowChecklists(true)}
+          onOpenAnalytics={() => setShowAnalytics(true)}
         />
 
-        <ChatInput
-          value={inputMessage}
-          disabled={isTyping}
-          onChange={setInputMessage}
-          onSend={() => sendMessage()}
-        />
+        <div className="container">
+          {!persona ? (
+            <div className="chat-window">
+              <div className="welcome-pick-dept">
+                <div className="welcome-pick-icon">&#9664;</div>
+                <h2>Welcome to Fiona</h2>
+                <p>Select your department and role from the sidebar to get started with personalized cybersecurity assistance.</p>
+              </div>
+            </div>
+          ) : (
+            <ChatWindow
+              messages={messages}
+              isTyping={isTyping}
+              onSendSuggestion={(text) => sendMessage(text)}
+              persona={persona}
+              onFeedback={handleFeedback}
+              onEscalate={handleEscalate}
+              tip={tipDismissed ? null : tip}
+              onDismissTip={() => setTipDismissed(true)}
+              onReportIncident={() => setShowIncidentReport(true)}
+              onOpenChecklists={() => setShowChecklists(true)}
+            />
+          )}
 
-        <div className="hint">
-          {persona.department} &middot; {persona.role}
+          <ChatInput
+            value={inputMessage}
+            disabled={isTyping || !persona}
+            onChange={setInputMessage}
+            onSend={() => sendMessage()}
+          />
+
+          {persona && (
+            <div className="hint">
+              {persona.department} &middot; {persona.role}
+            </div>
+          )}
         </div>
-      </div>
 
-      {/* Modals */}
-      {showIncidentReport && (
-        <IncidentReport
-          onClose={() => setShowIncidentReport(false)}
-          onSubmit={handleIncidentSubmit}
-          persona={persona}
-        />
-      )}
-      {showChecklists && (
-        <SecurityChecklist
-          onClose={() => setShowChecklists(false)}
-          persona={persona}
-        />
-      )}
-      {showAnalytics && (
-        <AnalyticsDashboard onClose={() => setShowAnalytics(false)} />
-      )}
+        {/* Modals */}
+        {showIncidentReport && (
+          <IncidentReport
+            onClose={() => setShowIncidentReport(false)}
+            onSubmit={handleIncidentSubmit}
+            persona={persona}
+          />
+        )}
+        {showChecklists && (
+          <SecurityChecklist
+            onClose={() => setShowChecklists(false)}
+            persona={persona}
+          />
+        )}
+        {showAnalytics && (
+          <AnalyticsDashboard onClose={() => setShowAnalytics(false)} />
+        )}
+      </div>
     </div>
   );
 }

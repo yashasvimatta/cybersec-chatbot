@@ -1,69 +1,167 @@
 import React, { useEffect, useRef, useState } from "react";
 
-/** Common security questions -- shown for every department */
-const COMMON_SECURITY_QUESTIONS = [
-  "How do I securely share files with others?",
-  "How should I encrypt sensitive emails?",
-  "What's the acceptable use policy for internet browsing?",
-  "A message got blocked -- who do I contact?",
-  "I got a suspicious email -- what should I do?",
-  "What can I do to help keep us cyber secure?",
-];
+/* ── Archetype-specific starter questions (3 per role) ─── */
 
-const PERSONA_SUGGESTIONS = {
-  Finance: [
-    "What are our data protection policies for financial systems?",
-    "How should we handle a suspicious transaction or fraud attempt?",
-    "What access controls should finance team members follow?",
-    "Summarize PCI-DSS compliance requirements relevant to us",
+const ARCHETYPE_QUESTIONS = {
+  // Supply Chain
+  "Warehouse Floor Worker": [
+    "What should I do if I find a suspicious USB device in the warehouse?",
+    "Who do I contact if my handheld scanner starts behaving strangely?",
+    "What are the rules for using my personal phone on the warehouse floor?",
   ],
-  "Supply Chain": [
-    "What are the security requirements for third-party vendor access?",
-    "How do we protect warehouse and logistics systems?",
-    "What's our business continuity plan for cyber incidents?",
-    "Summarize our network security policy",
+  "Warehouse Supervisor / Manager": [
+    "How do I remove system access when a team member leaves?",
+    "What is our procedure if a warehouse system goes offline unexpectedly?",
+    "How do I brief my team after a new phishing threat is identified?",
   ],
-  IS: [
-    "What are our incident response procedures?",
-    "Show me the latest vulnerability assessment findings",
-    "What firewall rules are pending removal?",
-    "What are our KPIs for 2026?",
+  "Transportation & Logistics": [
+    "What security checks apply when connecting to a customer or supplier network?",
+    "How do I handle sensitive delivery documentation securely?",
+    "What do I do if my vehicle tracking system is behaving unexpectedly?",
   ],
-  Retail: [
-    "What security measures protect our POS systems?",
-    "How do I report a suspected security incident at a store?",
-    "What are best practices for workstation security?",
-    "Summarize our security awareness training policy",
+  "Supply Chain Director / VP": [
+    "What is our supplier cybersecurity assessment process?",
+    "Summarise our business continuity plan for a cyber incident",
+    "What controls govern third-party vendor access to our systems?",
   ],
-  Commercial: [
-    "What's our data classification policy for commercial documents?",
-    "How should we securely share files with external partners?",
-    "What are our email security policies?",
-    "How do we protect customer data in our CRM?",
+
+  // Commercial
+  "Sales Representative": [
+    "How do I share a proposal securely with an external client?",
+    "What CRM data can I access on a personal device?",
+    "I received an unusual payment request from a client — what should I do?",
   ],
-  Procurement: [
-    "How do we assess vendor cybersecurity risk?",
-    "What security clauses should be in vendor contracts?",
-    "What access management policies apply to procurement tools?",
-    "Summarize our asset management policy",
+  "Merchandising & Category": [
+    "How do I share product data securely with suppliers?",
+    "What are the rules for accessing supplier portals?",
+    "How do I protect commercially sensitive pricing data?",
   ],
-  Legal: [
-    "What are our data breach notification obligations?",
-    "Summarize the IS Security Policy",
-    "What compliance frameworks do we follow?",
-    "What are the legal implications of a security incident?",
+  "Customer Experience & Service": [
+    "How should I handle a customer who shares personal data over chat?",
+    "What do I do if a customer account shows signs of suspicious activity?",
+    "What customer data am I permitted to share over the phone?",
   ],
-  HR: [
-    "What's the process for revoking access when an employee leaves?",
-    "Summarize our security awareness training policy",
-    "How do we protect employee PII and HR data?",
-    "What's our workstation security policy for remote workers?",
+  "Commercial Leadership": [
+    "What are our data protection obligations for customer data?",
+    "Summarise our email security policy for external communications",
+    "What is our incident response plan for a customer data breach?",
   ],
-  ELT: [
-    "Give me an executive summary of our security posture",
+
+  // HR
+  "HR Business Partner / Recruiter": [
+    "How do I share candidate CVs securely with hiring managers?",
+    "What personal data can I store in our applicant tracking system?",
+    "How do I handle a data subject access request from a candidate?",
+  ],
+  "HR Operations & Benefits": [
+    "How do I protect employee payroll data?",
+    "What are the rules for storing employee medical information?",
+    "How do I securely provision system access for a new starter?",
+  ],
+  "HR Leadership": [
+    "What are our obligations if employee personal data is breached?",
+    "Summarise our joiner-mover-leaver access control policy",
+    "How do we track security awareness training completion?",
+  ],
+
+  // Legal
+  "Compliance & Regulatory": [
+    "What are our breach notification timelines under GDPR?",
+    "How do we document our data processing activities?",
+    "Which compliance frameworks apply to our operations?",
+  ],
+  "Attorney / Legal Counsel": [
+    "How do I share legally privileged documents securely?",
+    "What encryption standards apply to confidential legal files?",
+    "How do I manage a legal hold on employee data?",
+  ],
+  "Legal & Risk Leadership": [
+    "Summarise our current regulatory compliance posture",
+    "What cyber risks belong on our board risk register?",
+    "What is our legal exposure in a ransomware incident?",
+  ],
+
+  // IS/IT
+  "IT Support & Security Operations": [
+    "Walk me through our incident response process for a confirmed phishing attempt",
+    "How do I revoke system access for a terminated employee?",
+    "What is our procedure for a suspected malware infection?",
+  ],
+  "Engineer / Developer": [
+    "What are our secure coding standards?",
+    "How should I handle secrets and API keys in our codebase?",
+    "What is our patch management policy and SLA?",
+  ],
+  "Architect / Senior Engineer": [
+    "What are our cloud security architecture principles?",
+    "How do we enforce network segmentation across environments?",
+    "Summarise our zero-trust implementation approach",
+  ],
+  "IS/IT Leadership": [
     "What are our cybersecurity KPIs for 2026?",
-    "Summarize the top risks from recent pen test findings",
-    "What's our incident response readiness level?",
+    "Summarise the key findings from our latest penetration test",
+    "What does our current threat landscape look like?",
+  ],
+
+  // Finance
+  "Accounts Payable / Receivable": [
+    "How do I verify a new supplier bank account to avoid payment fraud?",
+    "What do I do if I receive an unexpected invoice from a known supplier?",
+    "How do I report a suspected payment fraud attempt?",
+  ],
+  "Financial Analyst / Accountant": [
+    "How do I share financial reports securely with external auditors?",
+    "What data classification applies to our financial models?",
+    "What are the access controls for our finance systems?",
+  ],
+  "Finance Manager / Director": [
+    "What controls prevent unauthorised access to our financial systems?",
+    "How do we detect and respond to financial fraud?",
+    "What is our policy on finance system access for employees who have left?",
+  ],
+  "Finance Leadership": [
+    "What is our exposure to financial cyber fraud?",
+    "Summarise our PCI-DSS compliance status",
+    "What controls govern access to our treasury systems?",
+  ],
+
+  // Procurement
+  "Buyer / Merchandiser": [
+    "How do I assess a new supplier's cybersecurity posture?",
+    "What security clauses should I look for in a supplier contract?",
+    "How do I share tender documents securely?",
+  ],
+  "Demand Planning & Inventory": [
+    "How do I protect demand forecast data shared with suppliers?",
+    "What access do third parties have to our inventory systems?",
+    "How do I report a data incident involving a supplier?",
+  ],
+  "Procurement Manager": [
+    "What is our vendor risk assessment process?",
+    "How do we monitor third-party access to our systems?",
+    "What are our minimum cybersecurity requirements for suppliers?",
+  ],
+  "Procurement Leadership": [
+    "Summarise our supply chain cyber risk exposure",
+    "What is our process for offboarding a high-risk supplier?",
+    "How do we verify supplier compliance with our security standards?",
+  ],
+
+  // Retail
+  "Store Operations": [
+    "What do I do if a payment terminal behaves unexpectedly?",
+    "How do I report a suspected card skimmer on a till?",
+    "What are the rules for using personal devices in-store?",
+  ],
+  "Retail Merchandising & Marketing": [
+    "How do I share campaign assets securely with external agencies?",
+    "What customer data can we lawfully use for marketing?",
+    "How do I protect commercially sensitive promotional plans?",
+  ],
+  "Retail Leadership": [
+    "What is our incident response plan for a store system outage?",
+    "Summarise our PCI-DSS compliance status for retail",
+    "What cyber risks are specific to our retail estate?",
   ],
 };
 
@@ -232,7 +330,6 @@ function MessageActions({ msg, onFeedback, onEscalate, onSendSuggestion }) {
 
   return (
     <div className="msg-actions">
-      {/* Feedback */}
       <button
         className={`msg-action-btn ${feedbackGiven === "up" ? "active-up" : ""}`}
         onClick={() => handleFeedback("up")}
@@ -250,12 +347,10 @@ function MessageActions({ msg, onFeedback, onEscalate, onSendSuggestion }) {
         &#128078;
       </button>
 
-      {/* Copy */}
       <button className="msg-action-btn" onClick={handleCopy} title="Copy answer">
         {copied ? "\u2713" : "\u2398"}
       </button>
 
-      {/* Escalate (only on thumbs down) */}
       {feedbackGiven === "down" && (
         <button
           className="msg-action-btn escalate-btn"
@@ -266,7 +361,6 @@ function MessageActions({ msg, onFeedback, onEscalate, onSendSuggestion }) {
         </button>
       )}
 
-      {/* Follow-ups */}
       {msg.followUps?.length > 0 && (
         <div className="follow-ups">
           {msg.followUps.map((q, i) => (
@@ -311,6 +405,55 @@ function TipCard({ tip, onDismiss }) {
   );
 }
 
+/* ── Welcome screen ────────────────────────────────────── */
+
+function WelcomeScreen({ persona, tip, onDismissTip, onSendSuggestion, onReportIncident, onOpenChecklists }) {
+  const questions = ARCHETYPE_QUESTIONS[persona.role] || [];
+
+  return (
+    <div className="welcome">
+      <TipCard tip={tip} onDismiss={onDismissTip} />
+
+      <div className="welcome-avatar">
+        <FionaAvatar size={64} />
+      </div>
+
+      <h2 className="welcome-title">Hi, I am Fiona</h2>
+      <p className="welcome-subtitle">
+        Your cybersecurity assistant, configured for{" "}
+        <strong>{persona.role}</strong> in {persona.department}.
+      </p>
+
+      {questions.length > 0 && (
+        <div className="welcome-starters">
+          <p className="welcome-starters-label">Suggested questions for your role</p>
+          <div className="starter-list">
+            {questions.map((q, i) => (
+              <button
+                key={i}
+                className="starter-item"
+                onClick={() => onSendSuggestion?.(q)}
+                type="button"
+              >
+                {q}
+              </button>
+            ))}
+          </div>
+        </div>
+      )}
+
+      <div className="welcome-actions">
+        <button className="welcome-action-btn" onClick={onReportIncident} type="button">
+          Report an Incident
+        </button>
+        <button className="welcome-action-btn" onClick={onOpenChecklists} type="button">
+          Security Checklists
+        </button>
+      </div>
+    </div>
+  );
+}
+
 /* ── Main Component ────────────────────────────────────── */
 
 export default function ChatWindow({
@@ -322,7 +465,8 @@ export default function ChatWindow({
   onEscalate,
   tip,
   onDismissTip,
-  popularQuestions,
+  onReportIncident,
+  onOpenChecklists,
 }) {
   const chatContainer = useRef(null);
 
@@ -331,82 +475,17 @@ export default function ChatWindow({
     chatContainer.current.scrollTop = chatContainer.current.scrollHeight;
   }, [messages.length, isTyping]);
 
-  const deptSuggestions = persona?.department
-    ? PERSONA_SUGGESTIONS[persona.department] || []
-    : [];
-
   return (
     <div className="chat-window" ref={chatContainer}>
       {messages.length === 0 && (
-        <div className="welcome">
-          {/* Tip of the day */}
-          <TipCard tip={tip} onDismiss={onDismissTip} />
-
-          <div className="welcome-avatar">
-            <FionaAvatar size={72} />
-          </div>
-          <h2>
-            {persona
-              ? `Hi! I'm Fiona, your ${persona.department} assistant.`
-              : "Welcome"}
-          </h2>
-          <p>
-            {persona
-              ? `Tailored for ${persona.role} in ${persona.department}. Ask me anything about security policies, threats, compliance, or our internal knowledge base.`
-              : "Your cybersecurity assistant for incident response, threat analysis, and security best practices."}
-          </p>
-
-          {deptSuggestions.length > 0 && (
-            <>
-              <h4 className="suggestions-label">{persona.department} Questions</h4>
-              <div className="suggestions">
-                {deptSuggestions.map((s, i) => (
-                  <button
-                    key={`dept-${i}`}
-                    className="suggestion-chip"
-                    onClick={() => onSendSuggestion?.(s)}
-                    type="button"
-                  >
-                    {s}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-
-          <h4 className="suggestions-label">Common Security Questions</h4>
-          <div className="suggestions">
-            {COMMON_SECURITY_QUESTIONS.map((s, i) => (
-              <button
-                key={`common-${i}`}
-                className="suggestion-chip suggestion-chip-common"
-                onClick={() => onSendSuggestion?.(s)}
-                type="button"
-              >
-                {s}
-              </button>
-            ))}
-          </div>
-
-          {/* Popular questions from real usage */}
-          {popularQuestions?.length > 0 && (
-            <>
-              <h4 className="suggestions-label">Trending in Your Department</h4>
-              <div className="suggestions">
-                {popularQuestions.map((q, i) => (
-                  <button
-                    key={`pop-${i}`}
-                    className="suggestion-chip suggestion-chip-popular"
-                    onClick={() => onSendSuggestion?.(q.query)}
-                    type="button"
-                  >
-                    {q.query}
-                  </button>
-                ))}
-              </div>
-            </>
-          )}
-        </div>
+        <WelcomeScreen
+          persona={persona}
+          tip={tip}
+          onDismissTip={onDismissTip}
+          onSendSuggestion={onSendSuggestion}
+          onReportIncident={onReportIncident}
+          onOpenChecklists={onOpenChecklists}
+        />
       )}
 
       {messages.map((msg) => (
@@ -419,8 +498,23 @@ export default function ChatWindow({
             ) : null}
           </div>
           <div className={`message ${msg.type}`}>
+            {msg.type === "bot" && (
+              <div className="msg-meta-top">
+                <span className="msg-sender">Fiona</span>
+                <ConfidenceBadge confidence={msg.confidence} />
+              </div>
+            )}
             <div className="md-content">{renderMarkdown(msg.text)}</div>
-            {msg.type === "bot" && <ConfidenceBadge confidence={msg.confidence} />}
+            {msg.type === "bot" && msg.sources?.length > 0 && (
+              <div className="msg-sources">
+                <span className="msg-sources-label">Sources</span>
+                <div className="msg-sources-list">
+                  {msg.sources.map((s, i) => (
+                    <span key={i} className="msg-source-tag">{s.name || s.source_name}</span>
+                  ))}
+                </div>
+              </div>
+            )}
             {msg.timestamp && <div className="timestamp">{msg.timestamp}</div>}
             {msg.type === "bot" && (
               <MessageActions

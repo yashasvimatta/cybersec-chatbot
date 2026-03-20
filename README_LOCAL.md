@@ -397,10 +397,10 @@ pip install PyPDF2 --upgrade
 # For now, skip those or convert to text first
 ```
 
-### "ChromaDB errors"
+### "Vector DB errors"
 ```bash
-# Delete and recreate database
-rm -rf chroma_db/
+# Clear the PostgreSQL vector index and re-index
+psql -d fiona -c "DELETE FROM kb_chunks;"
 
 # Restart server and re-index
 python main_local.py

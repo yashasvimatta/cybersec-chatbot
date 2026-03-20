@@ -25,6 +25,7 @@ import database as db
 from security_tips import get_tip_of_the_day
 from checklists import get_checklists_for_department
 from email_service import build_incident_mailto, build_escalation_mailto
+from personas import PERSONAS, get_persona_from_job_title
 
 load_dotenv()
 
@@ -45,7 +46,7 @@ _SYNC_DEBOUNCE = 3  # seconds
 
 
 def _sync_index():
-    """Sync kb_raw -> ChromaDB. Only indexes new/changed files, skips unchanged."""
+    """Sync kb_raw -> PostgreSQL pgvector. Only indexes new/changed files, skips unchanged."""
     global _last_sync
     now = time.time()
     if now - _last_sync < _SYNC_DEBOUNCE:
@@ -192,6 +193,25 @@ async def root():
             "size_mb": round(stats['total_size_mb'], 2)
         },
     }
+
+
+@app.get("/personas")
+async def get_personas():
+    """Return all business units with their archetypes for the sidebar."""
+    result = {}
+    for bu_name, bu_data in PERSONAS.items():
+        result[bu_name] = {
+            "icon": bu_data.get("icon", ""),
+            "archetypes": [
+                {
+                    "id": a["id"],
+                    "name": a["name"],
+                    "description": a.get("description", ""),
+                }
+                for a in bu_data.get("archetypes", [])
+            ],
+        }
+    return result
 
 
 @app.post("/index")

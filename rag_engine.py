@@ -2,7 +2,7 @@
 RAG Engine
 Handles document indexing, embeddings, vector search, and answer generation
 Now supports: Anthropic Claude, OpenAI GPT-4, and Google Gemini
-Optimized: batch embeddings, batch ChromaDB inserts, concurrent processing
+Vector store: PostgreSQL + pgvector (cosine similarity)
 """
 import os
 import time
@@ -10,8 +10,8 @@ import hashlib
 from typing import List, Dict, Tuple
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from dotenv import load_dotenv
-import chromadb
-from chromadb.config import Settings
+import psycopg2
+from psycopg2.extras import execute_values
 from openai import OpenAI
 import anthropic
 import google.generativeai as genai
@@ -68,67 +68,60 @@ Visit our Cybersecurity website for policies, training materials, and self-servi
 
 class SimpleTextSplitter:
     """Simple text splitter — larger chunks = fewer API calls = faster indexing"""
-    
+
     def __init__(self, chunk_size: int = 2500, chunk_overlap: int = 200):
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
-    
+
     def split_text(self, text: str) -> List[str]:
         """Split text into overlapping chunks"""
         if not text:
             return []
-        
+
         chunks = []
         start = 0
         text_length = len(text)
-        
+
         while start < text_length:
             # Get chunk
             end = start + self.chunk_size
             chunk = text[start:end]
-            
+
             # Try to break at a sentence or word boundary
             if end < text_length:
                 # Look for sentence end
                 last_period = chunk.rfind('. ')
                 last_newline = chunk.rfind('\n')
                 last_space = chunk.rfind(' ')
-                
+
                 # Use the best boundary found
                 break_point = max(last_period, last_newline, last_space)
                 if break_point > self.chunk_size * 0.5:  # Only use if reasonably far in
                     chunk = chunk[:break_point + 1]
                     end = start + break_point + 1
-            
+
             chunks.append(chunk.strip())
-            
+
             # Move start position with overlap
             start = end - self.chunk_overlap
             if start <= 0:
                 start = end
-        
+
         return [c for c in chunks if c]  # Filter empty chunks
 
 
 class RAGEngine:
     def __init__(self):
-        # Use persistent ChromaDB storage
-        self.client = chromadb.Client(Settings(
-            is_persistent=True,
-            persist_directory="./chroma_db",
-            anonymized_telemetry=False,
-            allow_reset=True
-        ))
-        
-        # Create or get collection
-        self.collection = self.client.get_or_create_collection(
-            name="knowledge_base",
-            metadata={"hnsw:space": "cosine"}
-        )
-        
+        # PostgreSQL connection parameters
+        self.pg_dsn = os.getenv('PG_DSN', 'postgresql://localhost:5432/fiona')
+        self._embedding_dim = None  # Will be set on first embedding call
+
+        # Initialize PostgreSQL with pgvector
+        self._init_pgvector()
+
         # Determine which LLM to use
         llm_provider = os.getenv('LLM_PROVIDER', 'gemini').lower()
-        
+
         if llm_provider == 'gemini':
             # Configure Google Gemini with explicit API key
             gemini_key = os.getenv('GEMINI_API_KEY')
@@ -140,7 +133,7 @@ class RAGEngine:
             self.llm_client = genai.GenerativeModel(self.model)
             self.provider = 'gemini'
             print(f"✓ Using Google Gemini ({self.model})")
-            
+
         elif llm_provider == 'anthropic':
             self.llm_client = anthropic.Anthropic(
                 api_key=os.getenv('ANTHROPIC_API_KEY')
@@ -148,23 +141,23 @@ class RAGEngine:
             self.model = "claude-sonnet-4-20250514"
             self.provider = 'anthropic'
             print("✓ Using Anthropic Claude")
-            
+
         else:  # openai
             self.llm_client = OpenAI(api_key=os.getenv('OPENAI_API_KEY'))
             self.model = "gpt-4-turbo-preview"
             self.provider = 'openai'
             print("✓ Using OpenAI GPT-4")
-        
+
         # For embeddings - use Gemini by default
         self.embedding_provider = os.getenv('EMBEDDING_PROVIDER', 'gemini').lower()
-        
+
         # Initialize OpenAI client only if needed
         openai_key = os.getenv('OPENAI_API_KEY', '')
         if openai_key:
             self.openai_client = OpenAI(api_key=openai_key)
         else:
             self.openai_client = None
-        
+
         if self.embedding_provider == 'gemini':
             # Try to find an available Gemini embedding model
             self.embedding_model = self._find_available_gemini_embedding_model()
@@ -181,25 +174,134 @@ class RAGEngine:
             else:
                 self.embedding_model = 'text-embedding-3-small'
                 print("✓ Using OpenAI embeddings (text-embedding-3-small)")
-        
+
         # Text splitter — larger chunks = fewer embeddings = faster
         self.text_splitter = SimpleTextSplitter(
             chunk_size=2500,
             chunk_overlap=200
         )
-        
+
         # Batch size for embedding API calls (Gemini supports up to 100)
         self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', '100'))
-        
-        print(f"✓ RAG Engine initialized (LLM: {self.provider})")
-    
+
+        print(f"✓ RAG Engine initialized (LLM: {self.provider}, Vector DB: PostgreSQL+pgvector)")
+
+    # ── PostgreSQL + pgvector ─────────────────────────────────
+
+    def _get_conn(self):
+        """Get a new PostgreSQL connection."""
+        conn = psycopg2.connect(self.pg_dsn)
+        conn.autocommit = False
+        return conn
+
+    def _init_pgvector(self):
+        """Initialize pgvector extension and create tables if needed."""
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("CREATE EXTENSION IF NOT EXISTS vector;")
+            # Create the chunks table — embedding column added dynamically on first insert
+            cur.execute("""
+                CREATE TABLE IF NOT EXISTS kb_chunks (
+                    id TEXT PRIMARY KEY,
+                    source_id TEXT NOT NULL,
+                    source_name TEXT NOT NULL,
+                    source_path TEXT NOT NULL DEFAULT '',
+                    chunk_index INTEGER NOT NULL DEFAULT 0,
+                    content TEXT NOT NULL,
+                    content_hash TEXT NOT NULL DEFAULT '',
+                    modified_time TEXT NOT NULL DEFAULT '',
+                    created_at TIMESTAMPTZ NOT NULL DEFAULT now()
+                );
+            """)
+            cur.execute("""
+                CREATE INDEX IF NOT EXISTS idx_kb_chunks_source_id ON kb_chunks(source_id);
+            """)
+            conn.commit()
+            print("✓ PostgreSQL + pgvector initialized")
+        except Exception as e:
+            conn.rollback()
+            raise RuntimeError(f"Failed to initialize pgvector: {e}")
+        finally:
+            conn.close()
+
+    def _ensure_embedding_column(self, dim: int):
+        """Add the embedding vector column if it doesn't exist yet."""
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            # Check if column exists
+            cur.execute("""
+                SELECT column_name FROM information_schema.columns
+                WHERE table_name = 'kb_chunks' AND column_name = 'embedding';
+            """)
+            if not cur.fetchone():
+                cur.execute(f"ALTER TABLE kb_chunks ADD COLUMN embedding vector({dim});")
+                cur.execute("""
+                    CREATE INDEX IF NOT EXISTS idx_kb_chunks_embedding
+                    ON kb_chunks USING ivfflat (embedding vector_cosine_ops)
+                    WITH (lists = 100);
+                """)
+                conn.commit()
+                print(f"✓ Added embedding column (vector({dim})) with IVFFlat index")
+            else:
+                conn.commit()
+        except psycopg2.errors.DuplicateColumn:
+            conn.rollback()
+        except Exception as e:
+            conn.rollback()
+            # If IVFFlat index creation fails (needs enough rows), use HNSW or skip
+            if "ivfflat" in str(e).lower():
+                try:
+                    conn2 = self._get_conn()
+                    cur2 = conn2.cursor()
+                    cur2.execute(f"ALTER TABLE kb_chunks ADD COLUMN IF NOT EXISTS embedding vector({dim});")
+                    conn2.commit()
+                    conn2.close()
+                    print(f"✓ Added embedding column (vector({dim})), index will be created after data load")
+                except Exception:
+                    pass
+            else:
+                raise
+        finally:
+            conn.close()
+
+    def _create_index_if_needed(self):
+        """Create the IVFFlat index if enough rows exist and index doesn't exist."""
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM kb_chunks WHERE embedding IS NOT NULL;")
+            count = cur.fetchone()[0]
+            if count >= 100:
+                cur.execute("""
+                    SELECT indexname FROM pg_indexes
+                    WHERE tablename = 'kb_chunks' AND indexname = 'idx_kb_chunks_embedding';
+                """)
+                if not cur.fetchone():
+                    cur.execute("""
+                        CREATE INDEX idx_kb_chunks_embedding
+                        ON kb_chunks USING ivfflat (embedding vector_cosine_ops)
+                        WITH (lists = 100);
+                    """)
+                    conn.commit()
+                    print("✓ Created IVFFlat index on embeddings")
+                else:
+                    conn.commit()
+            else:
+                conn.commit()
+        except Exception:
+            conn.rollback()
+        finally:
+            conn.close()
+
     def _find_available_gemini_embedding_model(self) -> str:
         """Find an available Gemini embedding model"""
         try:
             # List available models
             models = genai.list_models()
             embedding_models = [
-                m.name for m in models 
+                m.name for m in models
                 if 'embedding' in m.name.lower() and 'embed' in str(m.supported_generation_methods).lower()
             ]
             if embedding_models:
@@ -207,7 +309,7 @@ class RAGEngine:
                 return embedding_models[0]
         except Exception as e:
             print(f"Could not list models: {str(e)}")
-        
+
         # Fallback to trying common model names
         for model_name in [
             'models/text-embedding-004',
@@ -224,9 +326,9 @@ class RAGEngine:
                 return model_name
             except:
                 continue
-        
+
         return None
-    
+
     def _find_available_gemini_model(self) -> str:
         """Find an available Gemini LLM model"""
         # Try models in order of preference
@@ -236,7 +338,7 @@ class RAGEngine:
             'gemini-1.5-pro',
             'gemini-pro',
         ]
-        
+
         for model_name in candidate_models:
             try:
                 # Just try to instantiate the model without testing
@@ -251,11 +353,11 @@ class RAGEngine:
                 # For other errors, the model likely exists
                 print(f"   ⚠️  Model '{model_name}' available (auth/quota issue but model exists)")
                 return model_name
-        
+
         # If nothing works, return gemini-pro as ultimate fallback
         print(f"   ⚠️  Using fallback model 'gemini-pro'")
         return 'gemini-pro'
-    
+
     def _doc_hash(self, content: str) -> str:
         """Quick hash to detect unchanged documents"""
         return hashlib.md5(content.encode('utf-8', errors='ignore')).hexdigest()
@@ -267,7 +369,7 @@ class RAGEngine:
         """
         if not texts:
             return []
-        
+
         if self.embedding_provider == 'gemini':
             try:
                 result = genai.embed_content(
@@ -275,7 +377,12 @@ class RAGEngine:
                     content=texts,
                     task_type="retrieval_document"
                 )
-                return result['embedding']
+                embeddings = result['embedding']
+                # Detect dimension on first call
+                if self._embedding_dim is None and embeddings:
+                    self._embedding_dim = len(embeddings[0])
+                    self._ensure_embedding_column(self._embedding_dim)
+                return embeddings
             except Exception as e:
                 # Fallback: if batch fails, try individually
                 print(f"\n    ⚠️  Batch embed failed ({str(e)[:40]}), falling back to sequential")
@@ -287,57 +394,73 @@ class RAGEngine:
                     model=self.embedding_model,
                     input=texts
                 )
-                return [d.embedding for d in response.data]
+                embeddings = [d.embedding for d in response.data]
+                if self._embedding_dim is None and embeddings:
+                    self._embedding_dim = len(embeddings[0])
+                    self._ensure_embedding_column(self._embedding_dim)
+                return embeddings
             return [self._get_embedding_with_retry(t) for t in texts]
 
     def _index_single_doc(self, doc: Dict, doc_idx: int, total: int) -> int:
-        """Index a single document: chunk → batch embed → batch insert. Returns chunk count."""
+        """Index a single document: chunk -> batch embed -> batch insert into PostgreSQL. Returns chunk count."""
         try:
             chunks = self.text_splitter.split_text(doc['content'])
             if not chunks:
                 return 0
-            
+
             print(f"  [{doc_idx}/{total}] 📄 {doc['name'][:50]} ({len(chunks)} chunks)", flush=True)
-            
-            all_ids = []
-            all_embeddings = []
-            all_documents = []
-            all_metadatas = []
-            
+
+            all_rows = []
+            content_hash = doc.get('_content_hash', self._doc_hash(doc['content']))
+
             # Process in batches
             for batch_start in range(0, len(chunks), self.embedding_batch_size):
                 batch = chunks[batch_start:batch_start + self.embedding_batch_size]
-                
+
                 # One API call for the entire batch
                 embeddings = self._get_batch_embeddings(batch)
-                
-                content_hash = doc.get('_content_hash', self._doc_hash(doc['content']))
+
                 for i, (chunk, emb) in enumerate(zip(batch, embeddings)):
                     idx = batch_start + i
-                    all_ids.append(f"{doc['id']}_chunk_{idx}")
-                    all_embeddings.append(emb)
-                    all_documents.append(chunk)
-                    all_metadatas.append({
-                        'source_id': doc['id'],
-                        'source_name': doc['name'],
-                        'source_path': doc['path'],
-                        'chunk_index': idx,
-                        'modified_time': str(doc.get('modifiedTime', '')),
-                        'content_hash': content_hash
-                    })
-            
-            # Single batch insert into ChromaDB
-            if all_ids:
-                self.collection.upsert(
-                    ids=all_ids,
-                    embeddings=all_embeddings,
-                    documents=all_documents,
-                    metadatas=all_metadatas
-                )
-            
-            print(f"      ✓ {len(all_ids)} chunks indexed", flush=True)
-            return len(all_ids)
-        
+                    chunk_id = f"{doc['id']}_chunk_{idx}"
+                    # Format embedding as pgvector literal
+                    emb_str = '[' + ','.join(str(v) for v in emb) + ']'
+                    all_rows.append((
+                        chunk_id,
+                        doc['id'],
+                        doc['name'],
+                        doc['path'],
+                        idx,
+                        chunk,
+                        content_hash,
+                        str(doc.get('modifiedTime', '')),
+                        emb_str,
+                    ))
+
+            # Batch insert into PostgreSQL
+            if all_rows:
+                conn = self._get_conn()
+                try:
+                    cur = conn.cursor()
+                    execute_values(cur, """
+                        INSERT INTO kb_chunks (id, source_id, source_name, source_path, chunk_index, content, content_hash, modified_time, embedding)
+                        VALUES %s
+                        ON CONFLICT (id) DO UPDATE SET
+                            content = EXCLUDED.content,
+                            content_hash = EXCLUDED.content_hash,
+                            modified_time = EXCLUDED.modified_time,
+                            embedding = EXCLUDED.embedding
+                    """, all_rows, template="(%s, %s, %s, %s, %s, %s, %s, %s, %s::vector)")
+                    conn.commit()
+                except Exception:
+                    conn.rollback()
+                    raise
+                finally:
+                    conn.close()
+
+            print(f"      ✓ {len(all_rows)} chunks indexed", flush=True)
+            return len(all_rows)
+
         except Exception as e:
             print(f"      ❌ {doc['name'][:40]}: {str(e)[:60]}")
             return 0
@@ -345,29 +468,30 @@ class RAGEngine:
     def _get_indexed_doc_hashes(self) -> Dict[str, str]:
         """Get a map of source_id -> content_hash for all indexed docs."""
         indexed = {}
+        conn = self._get_conn()
         try:
-            if self.collection.count() > 0:
-                existing = self.collection.get(include=['metadatas'])
-                for m in (existing.get('metadatas') or []):
-                    sid = m.get('source_id', '')
-                    h = m.get('content_hash', '')
-                    if sid and h:
-                        indexed[sid] = h
+            cur = conn.cursor()
+            cur.execute("SELECT DISTINCT source_id, content_hash FROM kb_chunks WHERE content_hash != '';")
+            for row in cur.fetchall():
+                indexed[row[0]] = row[1]
+            conn.commit()
         except Exception:
-            pass
+            conn.rollback()
+        finally:
+            conn.close()
         return indexed
 
     def _remove_doc_chunks(self, source_id: str):
         """Remove all chunks for a given source_id."""
+        conn = self._get_conn()
         try:
-            existing = self.collection.get(
-                where={"source_id": source_id},
-                include=[]
-            )
-            if existing and existing.get('ids'):
-                self.collection.delete(ids=existing['ids'])
+            cur = conn.cursor()
+            cur.execute("DELETE FROM kb_chunks WHERE source_id = %s;", (source_id,))
+            conn.commit()
         except Exception:
-            pass
+            conn.rollback()
+        finally:
+            conn.close()
 
     def index_documents(self, documents: List[Dict]) -> int:
         """
@@ -375,25 +499,25 @@ class RAGEngine:
         - Skips unchanged docs (by content hash)
         - Re-indexes modified docs automatically
         - Removes deleted docs from the index
-        - Batch embeddings + batch ChromaDB upserts
+        - Batch embeddings + batch PostgreSQL upserts
         - Parallel processing
         """
         valid_docs = [d for d in documents if d['content'].strip()]
-        
+
         # Get hashes of already-indexed docs
         indexed_hashes = self._get_indexed_doc_hashes()
         indexed_source_ids = set(indexed_hashes.keys())
         current_source_ids = set(d['id'] for d in valid_docs)
-        
+
         # Detect new, changed, and deleted docs
         docs_to_index = []
         skipped = 0
         updated = 0
-        
+
         for doc in valid_docs:
             doc_hash = self._doc_hash(doc['content'])
             old_hash = indexed_hashes.get(doc['id'])
-            
+
             if old_hash == doc_hash:
                 skipped += 1  # Unchanged
             elif old_hash is not None:
@@ -406,24 +530,24 @@ class RAGEngine:
                 # New file
                 doc['_content_hash'] = doc_hash
                 docs_to_index.append(doc)
-        
+
         # Remove docs that were deleted from kb_raw
         deleted_ids = indexed_source_ids - current_source_ids
         for sid in deleted_ids:
             self._remove_doc_chunks(sid)
-        
+
         total = len(docs_to_index)
         print(f"\n📚 Index sync: {total} to index ({skipped} unchanged, {updated} updated, {len(deleted_ids)} removed)")
         if total == 0:
             print("✓ Index is up to date\n")
             return 0
-        
+
         print("=" * 60)
         start_time = time.time()
-        
+
         total_chunks = 0
         max_workers = min(4, total)
-        
+
         if max_workers <= 1 or total <= 2:
             for idx, doc in enumerate(docs_to_index, 1):
                 total_chunks += self._index_single_doc(doc, idx, total)
@@ -439,57 +563,73 @@ class RAGEngine:
                     except Exception as e:
                         doc = futures[future]
                         print(f"      ❌ {doc['name'][:40]}: {str(e)[:60]}")
-        
+
         elapsed = time.time() - start_time
         print("=" * 60)
         print(f"✓ Indexed {total_chunks} chunks from {total} docs in {elapsed:.1f}s")
         if total_chunks > 0:
             print(f"  Speed: {total_chunks / elapsed:.0f} chunks/sec")
         print("=" * 60 + "\n")
+
+        # Try to create index if enough data
+        self._create_index_if_needed()
+
         return total_chunks
-    
+
     def retrieve_relevant_docs(self, query: str, folder_id: str = None, top_k: int = 10, similarity_threshold: float = 0.2) -> List[Dict]:
         """
-        Retrieve most relevant document chunks for a query
-        Only returns documents with similarity above the threshold
-        (For cosine distance: 0.0-1.0 scale, where 0 = identical, 1 = completely different)
-        similarity_threshold default: 0.5 (cosine distance < 0.5, or similarity > 0.5)
+        Retrieve most relevant document chunks for a query using pgvector cosine distance.
+        similarity_threshold: minimum similarity (1 - cosine_distance) to include.
         """
-        try:
-            if self.collection.count() == 0:
-                return []
-        except Exception:
-            return []
-        
         # Generate query embedding
         query_embedding = self._get_embedding(query)
-        
-        # Search vector database
-        results = self.collection.query(
-            query_embeddings=[query_embedding],
-            n_results=top_k
-        )
-        
+        emb_str = '[' + ','.join(str(v) for v in query_embedding) + ']'
+
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            # Use cosine distance operator <=> from pgvector
+            cur.execute("""
+                SELECT content, source_id, source_name, source_path, chunk_index,
+                       modified_time, content_hash,
+                       (embedding <=> %s::vector) AS distance
+                FROM kb_chunks
+                WHERE embedding IS NOT NULL
+                ORDER BY distance ASC
+                LIMIT %s;
+            """, (emb_str, top_k))
+
+            rows = cur.fetchall()
+            conn.commit()
+        except Exception:
+            conn.rollback()
+            return []
+        finally:
+            conn.close()
+
         # Format results with similarity threshold filter
         relevant_docs = []
-        if results['documents'] and results['documents'][0]:
-            for i in range(len(results['documents'][0])):
-                distance = results['distances'][0][i] if 'distances' in results else 0
-                # Convert cosine distance to similarity score (lower distance = higher similarity)
-                # Similarity = 1 - distance (so similarity ranges from 0 to 1)
-                similarity = max(0, 1 - distance)
-                
-                # Only include documents that meet the similarity threshold
-                if similarity >= similarity_threshold:
-                    relevant_docs.append({
-                        'content': results['documents'][0][i],
-                        'metadata': results['metadatas'][0][i],
-                        'distance': distance,
-                        'similarity': similarity
-                    })
-        
+        for row in rows:
+            distance = row[7]
+            similarity = max(0, 1 - distance)
+
+            if similarity >= similarity_threshold:
+                relevant_docs.append({
+                    'content': row[0],
+                    'metadata': {
+                        'source_id': row[1],
+                        'source_name': row[2],
+                        'source_path': row[3],
+                        'chunk_index': row[4],
+                        'modified_time': row[5],
+                        'content_hash': row[6],
+                    },
+                    'distance': distance,
+                    'similarity': similarity,
+                })
+
         return relevant_docs
-    
+
     def generate_answer(self, query: str, relevant_docs: List[Dict], history: List[Dict] = None, persona: Dict = None) -> Tuple[str, List[dict], float]:
         """
         Generate answer using LLM with retrieved context
@@ -500,10 +640,10 @@ class RAGEngine:
         Returns: (answer, sources, confidence_score)
         """
         history = history or []
-        
+
         # Build context from relevant documents if available
         context = self._build_context(relevant_docs) if relevant_docs else None
-        
+
         # Create appropriate prompt based on whether we have context
         if context and relevant_docs:
             # We have relevant documents - use RAG mode
@@ -511,7 +651,7 @@ class RAGEngine:
         else:
             # No relevant documents - use general knowledge mode
             prompt = self._create_prompt_general_knowledge(query, history, persona)
-        
+
         # Generate answer based on provider
         if self.provider == 'gemini':
             answer = self._generate_with_gemini(prompt)
@@ -519,22 +659,22 @@ class RAGEngine:
             answer = self._generate_with_anthropic(prompt)
         else:
             answer = self._generate_with_openai(prompt)
-        
+
         # Post-process: strip refusal phrases that Gemini sometimes inserts
         answer = self._clean_refusals(answer, query)
-        
+
         # Extract sources (only if we used documents)
         sources = self._extract_sources(relevant_docs) if relevant_docs else []
-        
+
         # Calculate confidence (only if we used documents)
         confidence = self._calculate_confidence(relevant_docs) if relevant_docs else 0.0
-        
+
         return answer, sources, confidence
-    
+
     def _clean_refusals(self, answer: str, query: str) -> str:
         """Strip refusal phrases from the response. If the entire response is a refusal, replace it."""
         import re
-        
+
         refusal_patterns = [
             r"I\s*(am\s+)?sorry,?\s*but\s+I\s+cannot\b.*?\.",
             r"I\s+cannot\s+answer\b.*?\.",
@@ -544,14 +684,14 @@ class RAGEngine:
             r"I\s+do\s+not\s+have\s+(the\s+)?(ability|information|access)\b.*?\.",
             r"The\s+provided\s+knowledge\s+base\s+does\s+not\s+contain\b.*?\.",
         ]
-        
+
         cleaned = answer
         for pat in refusal_patterns:
             cleaned = re.sub(pat, "", cleaned, flags=re.IGNORECASE)
-        
+
         # Remove leftover blank lines
         cleaned = re.sub(r'\n{3,}', '\n\n', cleaned).strip()
-        
+
         # If the entire response was a refusal (now empty), generate a fallback
         if len(cleaned) < 20:
             cleaned = (
@@ -559,9 +699,9 @@ class RAGEngine:
                 f"This topic may not be indexed. Try rephrasing your question, or ask me something "
                 f"about our security policies, incident response, or other indexed documents."
             )
-        
+
         return cleaned
-    
+
     def _get_embedding(self, text: str) -> List[float]:
         """Generate embedding for text"""
         if self.embedding_provider == 'gemini':
@@ -572,7 +712,11 @@ class RAGEngine:
                     content=text,
                     task_type="retrieval_document"
                 )
-                return result['embedding']
+                emb = result['embedding']
+                if self._embedding_dim is None:
+                    self._embedding_dim = len(emb)
+                    self._ensure_embedding_column(self._embedding_dim)
+                return emb
             except Exception as e:
                 error_msg = str(e)
                 if "not found" in error_msg or "not supported" in error_msg:
@@ -585,7 +729,7 @@ class RAGEngine:
                             print(f"   Trying {new_model}...")
                             self.embedding_model = new_model
                             return self._get_embedding(text)  # Retry with new model
-                
+
                 # If we have OpenAI as fallback, try it
                 if self.openai_client:
                     return self._get_embedding_openai(text)
@@ -593,18 +737,18 @@ class RAGEngine:
                     raise ValueError(f"Gemini embedding failed and no OpenAI key available: {error_msg}")
         else:
             return self._get_embedding_openai(text)
-    
+
     def _get_embedding_openai(self, text: str) -> List[float]:
         """Generate embedding using OpenAI"""
         if self.openai_client is None:
             raise ValueError("OpenAI API key not configured. Please set OPENAI_API_KEY in .env")
-        
+
         response = self.openai_client.embeddings.create(
             model=self.embedding_model,
             input=text
         )
         return response.data[0].embedding
-    
+
     def _get_embedding_with_retry(self, text: str, max_retries: int = 3) -> List[float]:
         """Generate embedding with retry logic"""
         last_error = None
@@ -618,24 +762,24 @@ class RAGEngine:
                     time.sleep(wait_time)
                 else:
                     raise last_error
-    
+
     def _build_context(self, docs: List[Dict]) -> str:
         """Build context string from relevant documents"""
         context_parts = []
-        
+
         for i, doc in enumerate(docs, 1):
             source = doc['metadata'].get('source_name', 'Unknown')
             path = doc['metadata'].get('source_path', '')
             content = doc['content']
-            
+
             context_parts.append(f"[Source {i}: {source} ({path})]\n{content}\n")
-        
+
         return "\n---\n".join(context_parts)
-    
+
     def _create_prompt(self, query: str, context: str) -> str:
         """Create prompt for LLM - DEPRECATED, use the specific ones below"""
         return self._create_prompt_with_context(query, context)
-    
+
     def _create_prompt_with_context(self, query: str, context: str, history: List[Dict] = None, persona: Dict = None) -> str:
         """Create prompt for answering based on documents (RAG mode)"""
         history = history or []
@@ -645,7 +789,7 @@ class RAGEngine:
                 f"{'User' if h['role']=='user' else 'Assistant'}: {h['content'][:500]}"
                 for h in history[-6:]
             ) + "\n\n"
-        
+
         persona_block = ""
         if persona:
             dept = persona.get("department", "Unknown")
@@ -654,7 +798,7 @@ class RAGEngine:
 **USER CONTEXT:** The user works in the **{dept}** department as a **{role}**.
 Tailor your answer to be relevant and actionable for someone in this role. Use terminology they'd understand. Highlight what matters most to {dept} — for example, if they're in Finance focus on financial controls and compliance; if HR focus on employee data protection and access management; if IS focus on technical details and procedures.
 """
-        
+
         return f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
 
 RULES:
@@ -674,7 +818,7 @@ RULES:
 Question: {query}
 
 Answer:"""
-    
+
     def _create_prompt_general_knowledge(self, query: str, history: List[Dict] = None, persona: Dict = None) -> str:
         """Create prompt for answering general knowledge questions (when no documents are relevant)"""
         history = history or []
@@ -684,7 +828,7 @@ Answer:"""
                 f"{'User' if h['role']=='user' else 'Assistant'}: {h['content'][:500]}"
                 for h in history[-6:]
             ) + "\n\n"
-        
+
         persona_block = ""
         if persona:
             dept = persona.get("department", "Unknown")
@@ -692,7 +836,7 @@ Answer:"""
             persona_block = f"""
 **USER CONTEXT:** The user works in **{dept}** as a **{role}**. Tailor your answer to their role and department.
 """
-        
+
         return f"""You are Fiona, C&S Wholesale Groceries' internal cybersecurity assistant. All users are authorized employees.
 
 RULES:
@@ -707,7 +851,7 @@ RULES:
 Question: {query}
 
 Answer:"""
-    
+
     def _generate_with_gemini(self, prompt: str, _retries: int = 3) -> str:
         """Generate answer using Google Gemini with relaxed safety settings and retry logic"""
         import time as _time
@@ -757,7 +901,7 @@ Answer:"""
                 else:
                     raise
         raise last_error
-    
+
     def _generate_with_anthropic(self, prompt: str) -> str:
         """Generate answer using Anthropic Claude"""
         message = self.llm_client.messages.create(
@@ -768,7 +912,7 @@ Answer:"""
             ]
         )
         return message.content[0].text
-    
+
     def _generate_with_openai(self, prompt: str) -> str:
         """Generate answer using OpenAI GPT"""
         response = self.llm_client.chat.completions.create(
@@ -780,12 +924,12 @@ Answer:"""
             max_tokens=1024
         )
         return response.choices[0].message.content
-    
+
     def _extract_sources(self, docs: List[Dict]) -> List[dict]:
         """Extract unique sources from relevant documents"""
         sources = []
         seen = set()
-        
+
         for doc in docs:
             source_id = doc['metadata'].get('source_id')
             if source_id not in seen:
@@ -795,34 +939,44 @@ Answer:"""
                     'id': source_id
                 })
                 seen.add(source_id)
-        
+
         return sources
-    
+
     def _calculate_confidence(self, docs: List[Dict]) -> float:
         """Calculate confidence score based on relevance"""
         if not docs:
             return 0.0
-        
+
         # Average distance (lower is better, so invert)
         avg_distance = sum(doc.get('distance', 1.0) for doc in docs) / len(docs)
         confidence = max(0.0, min(1.0, 1.0 - avg_distance))
-        
+
         return round(confidence, 2)
-    
+
     def clear_index(self):
         """Clear all indexed documents"""
-        self.client.delete_collection("knowledge_base")
-        self.collection = self.client.get_or_create_collection(
-            name="knowledge_base",
-            metadata={"hnsw:space": "cosine"}
-        )
-        print("✓ Index cleared")
-    
+        conn = self._get_conn()
+        try:
+            cur = conn.cursor()
+            cur.execute("DELETE FROM kb_chunks;")
+            conn.commit()
+            print("✓ Index cleared")
+        except Exception:
+            conn.rollback()
+        finally:
+            conn.close()
+
     def check_status(self) -> bool:
         """Check if RAG engine is operational"""
         try:
-            count = self.collection.count()
-            print(f"✓ RAG Engine status: {count} chunks indexed")
+            conn = self._get_conn()
+            cur = conn.cursor()
+            cur.execute("SELECT COUNT(*) FROM kb_chunks;")
+            count = cur.fetchone()[0]
+            conn.commit()
+            conn.close()
+            print(f"✓ RAG Engine status: {count} chunks indexed (PostgreSQL+pgvector)")
             return True
-        except:
+        except Exception as e:
+            print(f"✗ RAG Engine error: {e}")
             return False

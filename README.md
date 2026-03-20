@@ -6,12 +6,12 @@ It combines:
 - a React frontend
 - a FastAPI backend
 - RAG over local documents in `kb_raw/`
-- ChromaDB for vector search
+- PostgreSQL + pgvector for vector search
 - SQLite for conversations, incidents, feedback, and analytics
 
 ## Architecture
 
-- Blueprint: `ARCHITECTURE_BLUEPRINT.md`
+- Full documentation: `ARCHITECTURE_DOCUMENTATION.md`
 - Diagram: `docs/fiona-architecture-diagram.svg`
 
 ## Tech Stack
@@ -19,7 +19,7 @@ It combines:
 - Frontend: React 18, Vite, Axios
 - Backend: Python 3.11, FastAPI, Uvicorn, Pydantic
 - RAG/AI: Google Gemini (default), optional OpenAI/Anthropic
-- Vector DB: ChromaDB (`chroma_db/`)
+- Vector DB: PostgreSQL + pgvector
 - App DB: SQLite (`fiona.db`)
 - File parsing: PyPDF2, python-docx, python-pptx, pandas/openpyxl
 
@@ -31,7 +31,6 @@ It combines:
 - `database.py`: SQLite persistence layer
 - `frontend/`: React client
 - `kb_raw/`: Source knowledge base documents
-- `chroma_db/`: Vector store persistence
 
 ## Quick Start
 
@@ -41,7 +40,16 @@ It combines:
 pip install -r requirements.txt
 ```
 
-### 2. Create `.env`
+### 2. Set up PostgreSQL with pgvector
+
+```bash
+brew install postgresql@16
+brew services start postgresql@16
+createdb fiona
+psql -d fiona -c "CREATE EXTENSION IF NOT EXISTS vector;"
+```
+
+### 3. Create `.env`
 
 Create `.env` in repo root with at least:
 
@@ -50,9 +58,10 @@ GEMINI_API_KEY=your-key
 KB_FOLDER=kb_raw
 LLM_PROVIDER=gemini
 EMBEDDING_PROVIDER=gemini
+PG_DSN=postgresql://localhost:5432/fiona
 ```
 
-### 3. Start backend
+### 4. Start backend
 
 ```bash
 python main_local.py
@@ -60,7 +69,7 @@ python main_local.py
 
 Backend runs at `http://localhost:8000`.
 
-### 4. Start frontend
+### 5. Start frontend
 
 In a second terminal:
 
@@ -72,7 +81,7 @@ npm run dev
 
 Frontend runs at `http://localhost:5173`.
 
-### 5. Index documents (optional manual trigger)
+### 6. Index documents (optional manual trigger)
 
 In a new terminal:
 
@@ -93,10 +102,10 @@ Note: backend also auto-syncs `kb_raw/` on startup and watches for file changes.
 - `POST /escalate`
 - `GET /analytics/summary`
 
-## Data Storage Clarification
+## Data Storage
 
 Both databases are used:
-- ChromaDB stores embeddings/chunks for semantic retrieval.
+- PostgreSQL + pgvector stores embeddings/chunks for semantic retrieval.
 - SQLite stores operational app data (history, feedback, incidents, analytics, subscriptions).
 
 ## Notes

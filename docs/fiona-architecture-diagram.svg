@@ -186,8 +186,8 @@
   <text x="70" y="820" class="layer-title">💾 Data Layer</text>
   
   <rect x="150" y="840" width="280" height="110" class="data-box" rx="6"/>
-  <text x="290" y="865" text-anchor="middle" class="box-title">ChromaDB (Vector Database)</text>
-  <text x="290" y="885" text-anchor="middle" class="box-text">SQLite-based storage</text>
+  <text x="290" y="865" text-anchor="middle" class="box-title">PostgreSQL+pgvector (Vector DB)</text>
+  <text x="290" y="885" text-anchor="middle" class="box-text">PostgreSQL persistent storage</text>
   <text x="290" y="900" text-anchor="middle" class="box-text">Document embeddings + metadata</text>
   <text x="290" y="915" text-anchor="middle" class="box-text">Similarity search (cosine)</text>
   <text x="290" y="930" text-anchor="middle" class="box-text">Incremental updates</text>
@@ -239,13 +239,13 @@
   <text x="920" y="1070" class="layer-title">🔄 Key Data Flows</text>
   
   <text x="920" y="1100" class="box-text" font-weight="bold">1. Query Flow:</text>
-  <text x="920" y="1118" class="box-text">User → React → /chat → RAG → ChromaDB → LLM → Response</text>
+  <text x="920" y="1118" class="box-text">User → React → /chat → RAG → PostgreSQL+pgvector → LLM → Response</text>
   
   <text x="920" y="1140" class="box-text" font-weight="bold">2. Indexing Flow:</text>
-  <text x="920" y="1158" class="box-text">kb_raw → Doc Handler → Splitter → Embeddings → ChromaDB</text>
+  <text x="920" y="1158" class="box-text">kb_raw → Doc Handler → Splitter → Embeddings → PostgreSQL+pgvector</text>
   
   <text x="920" y="1180" class="box-text" font-weight="bold">3. Real-time Updates:</text>
-  <text x="920" y="1198" class="box-text">File Watcher → Auto Re-index → ChromaDB (incremental)</text>
+  <text x="920" y="1198" class="box-text">File Watcher → Auto Re-index → PostgreSQL+pgvector (incremental)</text>
   
   <!-- Statistics Box -->
   <rect x="50" y="1270" width="1300" height="140" fill="#e0f2fe" stroke="#0284c7" stroke-width="2" rx="8"/>
@@ -254,7 +254,7 @@
   <text x="100" y="1330" class="box-text" font-weight="bold">Tech Stack:</text>
   <text x="100" y="1348" class="box-text">• Frontend: React 18 + Vite + Custom CSS | Backend: FastAPI + Python 3.11 + Uvicorn</text>
   <text x="100" y="1366" class="box-text">• AI: Google Gemini 1.5 Flash (LLM) + text-embedding-004 (Embeddings)</text>
-  <text x="100" y="1384" class="box-text">• Data: ChromaDB (vectors) + SQLite (app data) + Local filesystem (kb_raw)</text>
+  <text x="100" y="1384" class="box-text">• Data: PostgreSQL+pgvector (vectors) + SQLite (app) + Local filesystem (kb_raw)</text>
   
   <text x="800" y="1330" class="box-text" font-weight="bold">Key Features:</text>
   <text x="800" y="1348" class="box-text">• 9 Department personas with tailored content</text>
