@@ -174,19 +174,22 @@ def get_conversation(session_id: str) -> Optional[Dict]:
 
 # ── Incidents ─────────────────────────────────────────────
 
-_incident_counter = 0
-
 def save_incident(session_id: str, incident_type: str, description: str,
                   urgency: str = "medium", department: str = None,
                   role: str = None) -> Dict:
-    global _incident_counter
-    _incident_counter += 1
-    ref = f"INC-{datetime.utcnow().strftime('%Y%m%d')}-{_incident_counter:04d}"
+    # Use SQLite's AUTOINCREMENT rowid as the unique counter — avoids race
+    # conditions from global in-process counters under concurrent requests.
     conn = _get_conn()
-    conn.execute(
+    date_str = datetime.utcnow().strftime('%Y%m%d')
+    # Insert a temporary unique reference, then update to the real one once
+    # we know the stable rowid.
+    cur = conn.execute(
         "INSERT INTO incidents (reference, session_id, department, role, incident_type, description, urgency) VALUES (?,?,?,?,?,?,?)",
-        (ref, session_id, department, role, incident_type, description, urgency)
+        (f"INC-{date_str}-PENDING-{os.urandom(4).hex()}", session_id, department, role, incident_type, description, urgency)
     )
+    rowid = cur.lastrowid
+    ref = f"INC-{date_str}-{rowid:04d}"
+    conn.execute("UPDATE incidents SET reference=? WHERE id=?", (ref, rowid))
     conn.commit()
     return {"reference": ref, "status": "open"}
 
@@ -201,18 +204,17 @@ def get_incidents(limit: int = 50) -> List[Dict]:
 
 # ── Escalations ───────────────────────────────────────────
 
-_esc_counter = 0
-
 def save_escalation(session_id: str, query: str, conversation_context: str,
                     department: str = None, role: str = None) -> Dict:
-    global _esc_counter
-    _esc_counter += 1
-    ref = f"ESC-{datetime.utcnow().strftime('%Y%m%d')}-{_esc_counter:04d}"
     conn = _get_conn()
-    conn.execute(
+    date_str = datetime.utcnow().strftime('%Y%m%d')
+    cur = conn.execute(
         "INSERT INTO escalations (reference, session_id, department, role, query, conversation_context) VALUES (?,?,?,?,?,?)",
-        (ref, session_id, department, role, query, conversation_context)
+        (f"ESC-{date_str}-PENDING-{os.urandom(4).hex()}", session_id, department, role, query, conversation_context)
     )
+    rowid = cur.lastrowid
+    ref = f"ESC-{date_str}-{rowid:04d}"
+    conn.execute("UPDATE escalations SET reference=? WHERE id=?", (ref, rowid))
     conn.commit()
     return {"reference": ref, "status": "pending"}
 

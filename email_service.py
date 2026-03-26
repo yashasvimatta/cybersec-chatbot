@@ -8,6 +8,17 @@ from datetime import datetime
 CYBERSEC_EMAIL = "CyberSecurity@cswg.com"
 
 
+def _sanitize(value: str) -> str:
+    """
+    Strip characters that could inject additional email headers or break the
+    mailto: URL.  Newlines are the primary injection vector (they let an
+    attacker add BCC:/CC: headers); we replace them with a space.
+    """
+    if not value:
+        return value
+    return value.replace('\r\n', ' ').replace('\r', ' ').replace('\n', ' ').strip()
+
+
 def build_incident_mailto(
     reference: str,
     incident_type: str,
@@ -20,6 +31,16 @@ def build_incident_mailto(
     """Build a mailto: URL for an incident report."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
+    # Sanitize all user-supplied fields before embedding in email headers/body
+    urgency      = _sanitize(urgency or "medium")
+    incident_type = _sanitize(incident_type or "")
+    department   = _sanitize(department or "Not specified")
+    role         = _sanitize(role or "Not specified")
+    sender_email = _sanitize(sender_email or "Not provided")
+    # description may contain newlines intentionally in the body — keep them,
+    # but strip any leading/trailing whitespace
+    description  = (description or "").strip()
+
     subject = f"[{urgency.upper()}] Security Incident Report {reference}"
 
     body = f"""Hi Cybersecurity Team,
@@ -30,9 +51,9 @@ Reference:     {reference}
 Date/Time:     {timestamp}
 Urgency:       {urgency.upper()}
 Incident Type: {incident_type.replace('_', ' ').title()}
-Department:    {department or 'Not specified'}
-Role:          {role or 'Not specified'}
-Reporter:      {sender_email or 'Not provided'}
+Department:    {department}
+Role:          {role}
+Reporter:      {sender_email}
 
 --- Description ---
 {description}
@@ -55,7 +76,11 @@ def build_escalation_mailto(
     """Build a mailto: URL for an escalation."""
     timestamp = datetime.now().strftime("%Y-%m-%d %H:%M:%S")
 
-    subject = f"[ESCALATION] {reference} — Question from {department or 'Employee'}"
+    department   = _sanitize(department or "Employee")
+    role         = _sanitize(role or "Not specified")
+    sender_email = _sanitize(sender_email or "Not provided")
+
+    subject = f"[ESCALATION] {reference} — Question from {department}"
 
     body = f"""Hi Cybersecurity Team,
 
@@ -63,15 +88,15 @@ I need human help with a question that Fiona couldn't fully answer.
 
 Reference:     {reference}
 Date/Time:     {timestamp}
-Department:    {department or 'Not specified'}
-Role:          {role or 'Not specified'}
-Reporter:      {sender_email or 'Not provided'}
+Department:    {department}
+Role:          {role}
+Reporter:      {sender_email}
 
 --- My Question ---
-{query}
+{(query or "").strip()}
 
 --- Conversation Context ---
-{conversation_context or 'N/A'}
+{(conversation_context or "N/A").strip()}
 
 ---
 Submitted via Fiona (C&S Cybersecurity Assistant).

@@ -184,6 +184,12 @@ class RAGEngine:
         # Batch size for embedding API calls (Gemini supports up to 100)
         self.embedding_batch_size = int(os.getenv('EMBEDDING_BATCH_SIZE', '100'))
 
+        # Small in-process cache for query embeddings — avoids a round-trip to
+        # the embedding API when the same question is asked more than once in a
+        # session.  Capped at 512 entries to bound memory usage.
+        self._query_embedding_cache: dict = {}
+        self._QUERY_CACHE_MAX = 512
+
         print(f"✓ RAG Engine initialized (LLM: {self.provider}, Vector DB: PostgreSQL+pgvector)")
 
     # ── PostgreSQL + pgvector ─────────────────────────────────
@@ -423,8 +429,9 @@ class RAGEngine:
                 for i, (chunk, emb) in enumerate(zip(batch, embeddings)):
                     idx = batch_start + i
                     chunk_id = f"{doc['id']}_chunk_{idx}"
-                    # Format embedding as pgvector literal
-                    emb_str = '[' + ','.join(str(v) for v in emb) + ']'
+                    # Compact float format: pgvector stores float4 so 8 sig. digits
+                    # is sufficient and produces ~40% shorter SQL strings.
+                    emb_str = '[' + ','.join(f'{v:.8g}' for v in emb) + ']'
                     all_rows.append((
                         chunk_id,
                         doc['id'],
@@ -576,14 +583,44 @@ class RAGEngine:
 
         return total_chunks
 
+    def _get_query_embedding(self, query: str) -> List[float]:
+        """
+        Embedding for a search query.
+        Uses `retrieval_query` task_type (better semantic matching than `retrieval_document`).
+        Caches results so repeated queries skip the API round-trip.
+        """
+        cache_key = query.strip().lower()
+        if cache_key in self._query_embedding_cache:
+            return self._query_embedding_cache[cache_key]
+
+        if self.embedding_provider == 'gemini':
+            try:
+                result = genai.embed_content(
+                    model=self.embedding_model,
+                    content=query,
+                    task_type="retrieval_query",
+                )
+                emb = result['embedding']
+            except Exception:
+                # Fall back to the general embedding path on any error
+                emb = self._get_embedding(query)
+        else:
+            emb = self._get_embedding(query)
+
+        if len(self._query_embedding_cache) < self._QUERY_CACHE_MAX:
+            self._query_embedding_cache[cache_key] = emb
+        return emb
+
     def retrieve_relevant_docs(self, query: str, folder_id: str = None, top_k: int = 10, similarity_threshold: float = 0.2) -> List[Dict]:
         """
         Retrieve most relevant document chunks for a query using pgvector cosine distance.
         similarity_threshold: minimum similarity (1 - cosine_distance) to include.
         """
-        # Generate query embedding
-        query_embedding = self._get_embedding(query)
-        emb_str = '[' + ','.join(str(v) for v in query_embedding) + ']'
+        # Use query-optimised embedding with in-process cache
+        query_embedding = self._get_query_embedding(query)
+        # Use compact float representation — pgvector stores float4 (~6 sig. digits),
+        # so 8 significant digits is more than sufficient and produces ~40% shorter strings.
+        emb_str = '[' + ','.join(f'{v:.8g}' for v in query_embedding) + ']'
 
         conn = self._get_conn()
         try:
@@ -861,10 +898,13 @@ Answer:"""
                 response = self.llm_client.generate_content(
                     prompt,
                     safety_settings={
-                        'HARM_CATEGORY_HARASSMENT': 'BLOCK_NONE',
-                        'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_NONE',
-                        'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_NONE',
-                        'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_NONE',
+                        # BLOCK_ONLY_HIGH allows cybersecurity discussion (threat analysis,
+                        # incident response, etc.) while still blocking genuinely harmful
+                        # content.  BLOCK_NONE was too permissive.
+                        'HARM_CATEGORY_HARASSMENT': 'BLOCK_ONLY_HIGH',
+                        'HARM_CATEGORY_HATE_SPEECH': 'BLOCK_ONLY_HIGH',
+                        'HARM_CATEGORY_SEXUALLY_EXPLICIT': 'BLOCK_ONLY_HIGH',
+                        'HARM_CATEGORY_DANGEROUS_CONTENT': 'BLOCK_ONLY_HIGH',
                     }
                 )
                 # Handle blocked responses

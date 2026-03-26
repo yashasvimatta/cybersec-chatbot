@@ -15,6 +15,7 @@ import os
 import json
 import time
 import threading
+import re
 
 from dotenv import load_dotenv
 
@@ -43,15 +44,31 @@ _watcher_stop = threading.Event()
 # Debounce: avoid re-indexing multiple times for a batch of file changes
 _last_sync = 0
 _SYNC_DEBOUNCE = 3  # seconds
+_sync_lock = threading.Lock()  # protects _last_sync from concurrent watcher threads
+
+# Input length caps
+_MAX_MESSAGE_LEN = 4000
+_MAX_QUERY_LEN   = 4000
+_MAX_DESC_LEN    = 5000
+_MAX_SESSION_LEN = 128
+# Session IDs must contain only safe characters (alphanumeric, dash, underscore, dot)
+_SESSION_ID_RE   = re.compile(r'^[a-zA-Z0-9_\-\.]{1,128}$')
+
+
+def _validate_session_id(sid: str):
+    """Raise HTTPException if session ID is invalid."""
+    if not sid or not _SESSION_ID_RE.match(sid):
+        raise HTTPException(status_code=400, detail="Invalid sessionId format")
 
 
 def _sync_index():
     """Sync kb_raw -> PostgreSQL pgvector. Only indexes new/changed files, skips unchanged."""
     global _last_sync
     now = time.time()
-    if now - _last_sync < _SYNC_DEBOUNCE:
-        return
-    _last_sync = now
+    with _sync_lock:
+        if now - _last_sync < _SYNC_DEBOUNCE:
+            return
+        _last_sync = now
     try:
         documents = file_handler.fetch_all_documents()
         if documents:
@@ -108,12 +125,14 @@ async def lifespan(app: FastAPI):
 app = FastAPI(title="Fiona - C&S Cybersecurity Assistant API", lifespan=lifespan)
 
 # CORS for React frontend
+# allow_credentials=True is incompatible with allow_origins=["*"] (browsers reject it).
+# Credentials (cookies/auth headers) are not used here, so False is correct.
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["*"],  # Configure this for production
-    allow_credentials=True,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_origins=["*"],
+    allow_credentials=False,
+    allow_methods=["GET", "POST", "OPTIONS"],
+    allow_headers=["Content-Type", "Authorization"],
 )
 
 # In-memory session storage for conversation history (frontend compatibility)
@@ -240,11 +259,16 @@ async def query_knowledge_base(request: QueryRequest):
     try:
         if not request.query.strip():
             raise HTTPException(status_code=400, detail="Query cannot be empty")
+        if len(request.query) > _MAX_QUERY_LEN:
+            raise HTTPException(status_code=400, detail=f"Query too long (max {_MAX_QUERY_LEN} chars)")
+        # folder_path is passed to file_handler which already enforces path confinement
         relevant_docs = rag_engine.retrieve_relevant_docs(request.query, folder_id=request.folder_path)
         answer, sources, confidence = rag_engine.generate_answer(request.query, relevant_docs if relevant_docs else [])
         return ChatResponse(answer=answer, sources=sources, confidence=confidence)
+    except HTTPException:
+        raise
     except Exception as e:
-        raise HTTPException(status_code=500, detail=f"Query failed: {str(e)}")
+        raise HTTPException(status_code=500, detail=f"Query failed")
 
 
 @app.get("/health")
@@ -283,6 +307,9 @@ async def chat(request: ChatRequest):
     try:
         if not request.message or not request.message.strip():
             raise HTTPException(status_code=400, detail="Message cannot be empty")
+        if len(request.message) > _MAX_MESSAGE_LEN:
+            raise HTTPException(status_code=400, detail=f"Message too long (max {_MAX_MESSAGE_LEN} chars)")
+        _validate_session_id(request.sessionId)
 
         _cleanup_old_sessions()
 
@@ -491,6 +518,8 @@ async def report_incident(request: IncidentRequest):
     """Submit a security incident report. Returns a mailto: link to CyberSecurity@cswg.com."""
     if not request.description.strip():
         raise HTTPException(status_code=400, detail="Description cannot be empty")
+    if len(request.description) > _MAX_DESC_LEN:
+        raise HTTPException(status_code=400, detail=f"Description too long (max {_MAX_DESC_LEN} chars)")
     try:
         result = db.save_incident(
             session_id=request.sessionId or "",
@@ -531,6 +560,9 @@ async def escalate_to_human(request: EscalateRequest):
     """Escalate a question to the Cybersecurity Team. Returns a mailto: link."""
     if not request.query.strip():
         raise HTTPException(status_code=400, detail="Query cannot be empty")
+    if len(request.query) > _MAX_QUERY_LEN:
+        raise HTTPException(status_code=400, detail=f"Query too long (max {_MAX_QUERY_LEN} chars)")
+    _validate_session_id(request.sessionId)
     try:
         result = db.save_escalation(
             session_id=request.sessionId,
