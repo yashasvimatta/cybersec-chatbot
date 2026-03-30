@@ -8,7 +8,7 @@ function FionaHeaderAvatar() {
   );
 }
 
-function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics }) {
+function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytics, onOpenNewsletter }) {
   const [open, setOpen] = useState(false);
   const ref = useRef(null);
 
@@ -76,6 +76,16 @@ function ToolsMenu({ persona, onReportIncident, onOpenChecklists, onOpenAnalytic
             </div>
           </a>
 
+          <button
+            className="tools-item"
+            onClick={() => { onOpenNewsletter(); setOpen(false); }}
+          >
+            <div className="tools-item-text">
+              <strong>Subscribe to Newsletter</strong>
+              <span>Weekly security digest delivered to your inbox</span>
+            </div>
+          </button>
+
           <a
             className="tools-item"
             href="mailto:CyberSecurity@cswg.com"
@@ -101,6 +111,7 @@ export default function Header({
   onReportIncident,
   onOpenChecklists,
   onOpenAnalytics,
+  onOpenNewsletter,
 }) {
   return (
     <header className="app-header">
@@ -135,6 +146,7 @@ export default function Header({
           onReportIncident={onReportIncident}
           onOpenChecklists={onOpenChecklists}
           onOpenAnalytics={onOpenAnalytics}
+          onOpenNewsletter={onOpenNewsletter}
         />
 
         <button className="btn btn-danger" onClick={onReset}>

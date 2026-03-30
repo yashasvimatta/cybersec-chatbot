@@ -7,6 +7,7 @@ import ChatInput from "./components/ChatInput.jsx";
 import IncidentReport from "./components/IncidentReport.jsx";
 import SecurityChecklist from "./components/SecurityChecklist.jsx";
 import AnalyticsDashboard from "./components/AnalyticsDashboard.jsx";
+import NewsletterSubscribe from "./components/NewsletterSubscribe.jsx";
 
 function getInitialTheme() {
   try {
@@ -29,6 +30,7 @@ export default function App() {
   const [showIncidentReport, setShowIncidentReport] = useState(false);
   const [showChecklists, setShowChecklists] = useState(false);
   const [showAnalytics, setShowAnalytics] = useState(false);
+  const [showNewsletter, setShowNewsletter] = useState(false);
 
   // Tip of the day
   const [tip, setTip] = useState(null);
@@ -262,6 +264,7 @@ export default function App() {
           onReportIncident={() => setShowIncidentReport(true)}
           onOpenChecklists={() => setShowChecklists(true)}
           onOpenAnalytics={() => setShowAnalytics(true)}
+          onOpenNewsletter={() => setShowNewsletter(true)}
         />
 
         <div className="container">
@@ -318,6 +321,12 @@ export default function App() {
         )}
         {showAnalytics && (
           <AnalyticsDashboard onClose={() => setShowAnalytics(false)} />
+        )}
+        {showNewsletter && (
+          <NewsletterSubscribe
+            onClose={() => setShowNewsletter(false)}
+            persona={persona}
+          />
         )}
       </div>
     </div>

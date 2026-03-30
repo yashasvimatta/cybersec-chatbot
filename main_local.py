@@ -26,6 +26,7 @@ import database as db
 from security_tips import get_tip_of_the_day
 from checklists import get_checklists_for_department
 from email_service import build_incident_mailto, build_escalation_mailto
+from newsletter import collect_newsletter_data, generate_html, generate_plain_text, send_weekly_newsletter, NewsletterSender
 from personas import PERSONAS, get_persona_from_job_title
 
 load_dotenv()
@@ -640,7 +641,9 @@ async def get_checklists(department: str = None):
     return {"checklists": get_checklists_for_department(department)}
 
 
-# ── Weekly Digest / Subscriptions ─────────────────────────
+# ── Newsletter / Subscriptions ────────────────────────────
+
+_EMAIL_RE = re.compile(r'^[^@\s]+@[^@\s]+\.[^@\s]+$')
 
 class SubscribeRequest(BaseModel):
     email: str
@@ -650,34 +653,75 @@ class SubscribeRequest(BaseModel):
 class UnsubscribeRequest(BaseModel):
     email: str
 
+class NewsletterSendRequest(BaseModel):
+    department: Optional[str] = None
+    extra_recipients: Optional[List[str]] = None  # e.g. test addresses
+
+
 @app.post("/subscribe")
-async def subscribe_digest(request: SubscribeRequest):
-    """Subscribe to the weekly security digest email."""
-    if not request.email or "@" not in request.email:
-        raise HTTPException(status_code=400, detail="Valid email required")
+async def subscribe_newsletter(request: SubscribeRequest):
+    """Subscribe to the Fiona Weekly Newsletter."""
+    if not request.email or not _EMAIL_RE.match(request.email):
+        raise HTTPException(status_code=400, detail="Valid email address required")
     ok = db.subscribe(request.email, request.department, request.role)
-    return {"success": ok, "message": "Subscribed to weekly digest"}
+    return {"success": ok, "message": "You're subscribed to the Fiona Weekly Newsletter!"}
+
 
 @app.post("/unsubscribe")
-async def unsubscribe_digest(request: UnsubscribeRequest):
-    """Unsubscribe from the weekly digest."""
+async def unsubscribe_newsletter(request: UnsubscribeRequest):
+    """Unsubscribe from the weekly newsletter."""
     db.unsubscribe(request.email)
-    return {"success": True, "message": "Unsubscribed"}
+    return {"success": True, "message": "Unsubscribed successfully"}
+
+
+@app.get("/newsletter/preview", response_class=None)
+async def newsletter_preview(department: str = None):
+    """
+    Return the rendered HTML newsletter for the current week.
+    Open this in a browser to preview exactly what subscribers will receive.
+    """
+    from fastapi.responses import HTMLResponse
+    data = collect_newsletter_data(department)
+    html = generate_html(data)
+    return HTMLResponse(content=html)
+
+
+@app.post("/newsletter/send")
+async def newsletter_send(request: NewsletterSendRequest = None):
+    """
+    Send the weekly newsletter to all active subscribers.
+    Optionally add extra_recipients (e.g. for a test run).
+    Call this from a weekly cron job: POST /newsletter/send
+    """
+    dept  = request.department if request else None
+    extra = request.extra_recipients if request else None
+    result = send_weekly_newsletter(department=dept, extra_recipients=extra)
+    return result
+
+
+@app.post("/newsletter/send-test")
+async def newsletter_send_test(email: str, department: str = None):
+    """Send a one-off test newsletter to a single email address."""
+    if not email or not _EMAIL_RE.match(email):
+        raise HTTPException(status_code=400, detail="Valid email address required")
+    result = send_weekly_newsletter(department=department, extra_recipients=[email])
+    return result
+
+
+@app.get("/newsletter/subscribers")
+async def newsletter_subscribers():
+    """List active newsletter subscribers (count only for privacy)."""
+    subs = db.get_active_subscribers()
+    return {"count": len(subs), "emails": [s["email"] for s in subs]}
+
 
 @app.get("/digest/preview")
-async def preview_digest(department: str = None):
-    """
-    Preview the weekly digest content (for testing / cron integration).
-    In production, a cron job would call this endpoint and email it to subscribers.
-    """
+async def digest_preview_legacy(department: str = None):
+    """Legacy endpoint — kept for backwards compatibility."""
     data = db.get_digest_data(department)
-    tip = get_tip_of_the_day(department)
-    subscribers = db.get_active_subscribers()
-    return {
-        "digest": data,
-        "tip_of_the_week": tip,
-        "subscriber_count": len(subscribers),
-    }
+    tip  = get_tip_of_the_day(department)
+    subs = db.get_active_subscribers()
+    return {"digest": data, "tip_of_the_week": tip, "subscriber_count": len(subs)}
 
 
 # ── Main ──────────────────────────────────────────────────
